@@ -229,52 +229,55 @@ function buildEnclosureShell(pts, expandedZ, enclosure, heightGrid) {
     const group = new THREE.Group();
     const eTop  = enclosure.edge_top;
     const eBot  = enclosure.edge_bottom;
+    const N     = pts.length;
 
-    // Polygon centroid — used to determine inward wall normals.
+    // Centroid — used for uniform inward scaling (same as old buildShellPreview).
     let cx = 0, cz = 0;
     pts.forEach(p => { cx += p[0]; cz += p[1]; });
-    cx /= pts.length; cz /= pts.length;
+    cx /= N; cz /= N;
 
-    // Side walls — profile-aware quad strips.
-    // Each wall segment generates one quad per row of the edge profile.
+    // Inset a vertex toward the centroid by `off` mm.
+    // This is the same as the old makeShape(outline, inset) — uniform shrink
+    // from centroid, so every corner stays clean regardless of polygon shape.
+    function insetPt(x, y, off) {
+        if (off === 0) return [x, y];
+        const dx = x - cx, dz = y - cz;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 0.01) return [x, y];
+        const f = Math.max(0, (dist - off)) / dist;
+        return [cx + dx * f, cz + dz * f];
+    }
+
+    // ── Side walls ────────────────────────────────────────────────────────────
+    // One quad strip per wall segment, one quad per profile row.
     const wallPos = [];
     const wallIdx = [];
     let vi = 0;
 
-    for (let i = 0; i < pts.length; i++) {
-        const j  = (i + 1) % pts.length;
-        const x0 = pts[i][0], y0 = pts[i][1], z0 = expandedZ[i];
-        const x1 = pts[j][0], y1 = pts[j][1], z1 = expandedZ[j];
+    for (let i = 0; i < N; i++) {
+        const j   = (i + 1) % N;
+        const x0  = pts[i][0], y0 = pts[i][1], z0 = expandedZ[i];
+        const x1  = pts[j][0], y1 = pts[j][1], z1 = expandedZ[j];
 
-        // Per-segment 2D inward normal (in design XZ → Three.js XZ coordinates)
-        const ex = x1 - x0, ez = y1 - y0;
-        const len = Math.hypot(ex, ez);
-        if (len < 1e-6) continue;
-        let nx = -ez / len, nz = ex / len;
-        // Flip to point toward centroid (= inward)
-        const mx = (x0 + x1) / 2, mz = (y0 + y1) / 2;
-        if ((cx - mx) * nx + (cz - mz) * nz < 0) { nx = -nx; nz = -nz; }
-
-        // Build height profile for left (i) and right (j) wall columns
         const profL = _edgeProfile(z0, eBot, eTop);
         const profR = _edgeProfile(z1, eBot, eTop);
 
-        // One quad per profile row.
-        // off > 0 = inward from polygon boundary (toward device interior).
-        // nx/nz is the inward normal, so inward displacement = +nx*off.
-        // The outer face curves back from the boundary near lid/floor —
-        // the lid covers the top flush, giving a visible soft rounded edge.
         for (let k = 0; k < profL.length - 1; k++) {
             const { h: hLb, off: oLb } = profL[k];
             const { h: hLt, off: oLt } = profL[k + 1];
             const { h: hRb, off: oRb } = profR[k];
             const { h: hRt, off: oRt } = profR[k + 1];
 
+            const [xLb, zLb] = insetPt(x0, y0, oLb);
+            const [xLt, zLt] = insetPt(x0, y0, oLt);
+            const [xRb, zRb] = insetPt(x1, y1, oRb);
+            const [xRt, zRt] = insetPt(x1, y1, oRt);
+
             wallPos.push(
-                x0 + nx * oLb, hLb, y0 + nz * oLb,   // bottom-left
-                x1 + nx * oRb, hRb, y1 + nz * oRb,   // bottom-right
-                x1 + nx * oRt, hRt, y1 + nz * oRt,   // top-right
-                x0 + nx * oLt, hLt, y0 + nz * oLt,   // top-left
+                xLb, hLb, zLb,
+                xRb, hRb, zRb,
+                xRt, hRt, zRt,
+                xLt, hLt, zLt,
             );
             wallIdx.push(vi, vi+1, vi+2,  vi, vi+2, vi+3);
             vi += 4;
@@ -287,41 +290,51 @@ function buildEnclosureShell(pts, expandedZ, enclosure, heightGrid) {
     wallGeo.computeVertexNormals();
     group.add(new THREE.Mesh(wallGeo, MAT.enclosureWall()));
 
-    // Top lid — built from the expanded polygon shape so it always fills
-    // to the wall edges.  If a height grid is available, each tessellated
-    // vertex's y is warped to the grid-sampled ceiling height.
-    const lidGeo = buildLid(pts, expandedZ, enclosure.height_mm ?? 25, heightGrid);
-    if (lidGeo) {
-        group.add(new THREE.Mesh(lidGeo, MAT.enclosureLid()));
-    }
+    // ── Lid ───────────────────────────────────────────────────────────────────
+    // The lid boundary must match where the wall tops actually sit — i.e. the
+    // inset polygon at the top-profile offset.  Without this the lid overhangs
+    // or falls short of the wall edge (visible at horns / varying-height areas).
+    const lidPts = pts.map((v, i) => {
+        const prof = _edgeProfile(expandedZ[i], eBot, eTop);
+        const { off } = prof[prof.length - 1];
+        return insetPt(v[0], v[1], off);
+    });
+    const lidGeo = buildLid(lidPts, expandedZ, enclosure.height_mm ?? 25, heightGrid);
+    if (lidGeo) group.add(new THREE.Mesh(lidGeo, MAT.enclosureLid()));
 
-    // ── Cage wireframe ──────────────────────────────────────────
-    // Draw bottom loop, top loop (following per-point heights), and
-    // vertical pillars only at the original control-point density
-    // (every ~7th point when using 6-segment arcs, i.e. one per corner).
+    // ── Wireframe ─────────────────────────────────────────────────────────────
     const outlineMat = new THREE.LineBasicMaterial({ color: 0x90c8ff });
 
-    // Bottom loop — follows the full expanded (rounded) polygon
-    const botPts = pts.map(v => new THREE.Vector3(v[0], 0, v[1]));
-    botPts.push(botPts[0].clone());
-    group.add(new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(botPts), outlineMat));
+    // Bottom loop — inset by the floor-level offset of each vertex's profile
+    const botLoopPts = pts.map((v, i) => {
+        const prof = _edgeProfile(expandedZ[i], eBot, eTop);
+        const [ix, iz] = insetPt(v[0], v[1], prof[0].off);
+        return new THREE.Vector3(ix, prof[0].h, iz);
+    });
+    botLoopPts.push(botLoopPts[0].clone());
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(botLoopPts), outlineMat));
 
-    // Top loop — simple polygon outline at each point's ceiling height.
-    const topPts = pts.map((v, i) => new THREE.Vector3(v[0], expandedZ[i], v[1]));
-    topPts.push(topPts[0].clone());
-    group.add(new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(topPts), outlineMat));
+    // Top loop — inset by the lid-level offset of each vertex's profile
+    const topLoopPts = pts.map((v, i) => {
+        const prof = _edgeProfile(expandedZ[i], eBot, eTop);
+        const last = prof[prof.length - 1];
+        const [ix, iz] = insetPt(v[0], v[1], last.off);
+        return new THREE.Vector3(ix, last.h, iz);
+    });
+    topLoopPts.push(topLoopPts[0].clone());
+    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(topLoopPts), outlineMat));
 
-    // Vertical pillars — only at every (segs+1)th point to avoid clutter
+    // Vertical pillars — trace the full profile curve at every (SEGS+1)th vertex
     const SEGS = 6;
     pts.forEach((v, i) => {
         if (i % (SEGS + 1) !== 0) return;
+        const prof = _edgeProfile(expandedZ[i], eBot, eTop);
+        const pillarPts = prof.map(({ h, off }) => {
+            const [ix, iz] = insetPt(v[0], v[1], off);
+            return new THREE.Vector3(ix, h, iz);
+        });
         group.add(new THREE.Line(
-            new THREE.BufferGeometry().setFromPoints([
-                new THREE.Vector3(v[0], 0,            v[1]),
-                new THREE.Vector3(v[0], expandedZ[i], v[1]),
-            ]), outlineMat));
+            new THREE.BufferGeometry().setFromPoints(pillarPts), outlineMat));
     });
 
     return group;
