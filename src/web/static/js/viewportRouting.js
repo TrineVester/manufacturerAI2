@@ -17,29 +17,36 @@
 
 import { registerHandler } from './viewport.js';
 import { drawComponentIcon } from './componentRenderer.js';
+import { normaliseOutline, buildOutlinePath, esc, SCALE, PAD, NS, attachViewToggle } from './viewportUtils.js';
 
-// ── Register ──────────────────────────────────────────────────
+// ── Toggle controller ───────────────────────────────────────────
+
+const _toggle = attachViewToggle(
+    'routing',
+    (el, data) => { el.innerHTML = ''; el.appendChild(buildPreview(data)); },
+    async (host) => {
+        const { create3DScene } = await import('./viewport3d.js');
+        return create3DScene(host);
+    },
+);
+
+// ── Register ────────────────────────────────────────────────
 
 registerHandler('routing', {
     label: 'Routing Preview',
     placeholder: 'Run the router to see trace layout',
 
-    render(el, data) {
-        el.innerHTML = '';
-        el.appendChild(buildPreview(data));
-    },
+    render(el, data)  { _toggle.render(el, data); },
 
     clear(el) {
+        _toggle.clear(el);
         el.innerHTML = '<p class="viewport-empty">Run the router to see trace layout</p>';
     },
+
+    unmount()        { _toggle.unmount(); },
+    onResize(el,w,h) { _toggle.resize(w, h); },
 });
 
-
-// ── Constants ─────────────────────────────────────────────────
-
-const SCALE = 4;      // mm → px
-const PAD   = 40;     // px padding around the SVG content
-const NS    = 'http://www.w3.org/2000/svg';
 
 // Build a colour map for a list of net names by distributing hues
 // evenly around the HSL wheel so every net gets a maximally distinct colour.
@@ -321,75 +328,7 @@ function buildFailedNets(failedNets) {
 }
 
 
-// ── Outline helpers (same as viewportPlacement) ───────────────
-
-function normaliseOutline(outline) {
-    if (!outline || !Array.isArray(outline)) return { verts: [], corners: [] };
-    const verts = outline.map(p => [p.x, p.y]);
-    const corners = outline.map(p => {
-        let ein = p.ease_in ?? null;
-        let eout = p.ease_out ?? null;
-        if (ein != null && eout == null) eout = ein;
-        if (eout != null && ein == null) ein = eout;
-        return { ease_in: ein ?? 0, ease_out: eout ?? 0 };
-    });
-    return { verts, corners };
-}
-
-function buildOutlinePath(verts, edges, ox, oy, scale) {
-    const n = verts.length;
-    if (n < 3) return '';
-
-    const pts = verts.map(v => ({ x: ox + v[0] * scale, y: oy + v[1] * scale }));
-
-    const cornerInfo = [];
-    for (let i = 0; i < n; i++) {
-        const edge = edges[i] ?? { ease_in: 0, ease_out: 0 };
-        const eIn  = (edge.ease_in  ?? 0) * scale;
-        const eOut = (edge.ease_out ?? 0) * scale;
-        cornerInfo.push({ round: eIn > 0 || eOut > 0, eIn, eOut });
-    }
-
-    const segments = [];
-    for (let i = 0; i < n; i++) {
-        const prev = (i - 1 + n) % n;
-        const next = (i + 1) % n;
-        const P = pts[prev], C = pts[i], N = pts[next];
-
-        if (!cornerInfo[i].round) {
-            segments.push(i === 0 ? `M ${C.x} ${C.y}` : `L ${C.x} ${C.y}`);
-            continue;
-        }
-
-        let { eIn, eOut } = cornerInfo[i];
-        const dPx = P.x - C.x, dPy = P.y - C.y;
-        const dNx = N.x - C.x, dNy = N.y - C.y;
-        const lenP = Math.hypot(dPx, dPy);
-        const lenN = Math.hypot(dNx, dNy);
-
-        if (lenP === 0 || lenN === 0) {
-            segments.push(i === 0 ? `M ${C.x} ${C.y}` : `L ${C.x} ${C.y}`);
-            continue;
-        }
-
-        eIn  = Math.min(eIn,  lenP * 0.45);
-        eOut = Math.min(eOut, lenN * 0.45);
-
-        const t1x = C.x + (dPx / lenP) * eIn;
-        const t1y = C.y + (dPy / lenP) * eIn;
-        const t2x = C.x + (dNx / lenN) * eOut;
-        const t2y = C.y + (dNy / lenN) * eOut;
-
-        segments.push(i === 0 ? `M ${t1x} ${t1y}` : `L ${t1x} ${t1y}`);
-        segments.push(`Q ${C.x} ${C.y} ${t2x} ${t2y}`);
-    }
-
-    segments.push('Z');
-    return segments.join(' ');
-}
-
-
-// ── Helpers ───────────────────────────────────────────────────
+// ── Routing helpers ───────────────────────────────────────────────────
 
 function traceLength(path) {
     let len = 0;
@@ -399,10 +338,4 @@ function traceLength(path) {
         len += Math.abs(dx) + Math.abs(dy);
     }
     return len;
-}
-
-function esc(text) {
-    const el = document.createElement('span');
-    el.textContent = text ?? '';
-    return el.innerHTML;
 }

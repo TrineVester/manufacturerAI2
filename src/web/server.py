@@ -73,21 +73,34 @@ async def _no_cache_static(request, call_next):
     return response
 
 
-# ── Catalog (loaded once, shared) ──────────────────────────────────
+# ── Catalog (auto-reloads when any catalog/*.json changes on disk) ──
 
 _catalog_result: CatalogResult | None = None
+_catalog_mtime: float = 0.0
+
+
+def _catalog_dir_mtime() -> float:
+    """Return the newest mtime among all catalog/*.json files."""
+    from src.catalog.loader import CATALOG_DIR
+    try:
+        return max((p.stat().st_mtime for p in CATALOG_DIR.glob("*.json")), default=0.0)
+    except OSError:
+        return 0.0
 
 
 def _get_catalog() -> CatalogResult:
-    global _catalog_result
-    if _catalog_result is None:
+    global _catalog_result, _catalog_mtime
+    mtime = _catalog_dir_mtime()
+    if _catalog_result is None or mtime > _catalog_mtime:
         _catalog_result = load_catalog()
+        _catalog_mtime = mtime
     return _catalog_result
 
 
 def _reload_catalog() -> CatalogResult:
-    global _catalog_result
+    global _catalog_result, _catalog_mtime
     _catalog_result = load_catalog()
+    _catalog_mtime = _catalog_dir_mtime()
     return _catalog_result
 
 
@@ -270,7 +283,7 @@ async def api_placement_result(session: str = Query(...)):
 
 
 def _enrich_components(components: list, cat) -> None:
-    """Add body dimensions and pin positions from the catalog."""
+    """Add body dimensions (including height) and pin positions from the catalog."""
     cat_map = {c.id: c for c in cat.components}
     for comp in components:
         c = cat_map.get(comp.get("catalog_id"))
@@ -281,11 +294,50 @@ def _enrich_components(components: list, cat) -> None:
             "width_mm": c.body.width_mm,
             "length_mm": c.body.length_mm,
             "diameter_mm": c.body.diameter_mm,
+            "height_mm": c.body.height_mm,   # needed for 3D viewport component boxes
         }
         comp["pins"] = [
             {"id": p.id, "position_mm": list(p.position_mm)}
             for p in c.pins
         ]
+
+
+def _enrich_design_3d(data: dict) -> None:
+    """Compute and attach height_grid + per-placement surface_normal to a design dict.
+
+    Mutates *data* in place.  Safe to call multiple times (idempotent).
+    The frontend reads these precomputed values directly — no geometry math in JS.
+    """
+    from src.pipeline.design.parsing import _parse_outline, _parse_enclosure
+    from src.pipeline.design.height_field import (
+        sample_height_grid, surface_normal_at, blended_height,
+    )
+
+    outline_data = data.get("outline", [])
+    enclosure_data = data.get("enclosure", {})
+    if not outline_data:
+        return
+
+    try:
+        outline = _parse_outline(outline_data)
+        enclosure = _parse_enclosure(enclosure_data)
+    except Exception:
+        return
+
+    # Sample the height field on a 2mm grid
+    grid = sample_height_grid(outline, enclosure, resolution_mm=1.0)
+    data["height_grid"] = grid
+
+    # Add surface_normal and z_at_position to each UI placement
+    for up in data.get("ui_placements", []):
+        x, y = up.get("x_mm", 0), up.get("y_mm", 0)
+        try:
+            z = blended_height(x, y, outline, enclosure)
+            normal = surface_normal_at(x, y, grid)
+            up["z_at_position"] = round(z, 3)
+            up["surface_normal"] = [round(n, 4) for n in normal]
+        except Exception:
+            pass
 
 
 def _enrich_placement(data: dict, cat) -> dict:
@@ -323,6 +375,7 @@ async def api_run_routing(session: str = Query(...)):
     data["outline"] = placement_data.get("outline", [])
     data["components"] = placement_data.get("components", [])
     data["nets"] = placement_data.get("nets", [])
+    data["enclosure"] = placement_data.get("enclosure", {"height_mm": 25})
 
     # Enrich components with body + pin data for rendering
     _enrich_components(data.get("components", []), cat)
@@ -393,6 +446,31 @@ async def api_design_result(session: str = Query(...)):
     # Enrich components with body + pin data for rendering
     cat = _get_catalog()
     _enrich_components(data.get("components", []), cat)
+    _enrich_design_3d(data)
+    return data
+
+
+@app.patch("/api/session/design/enclosure")
+async def api_patch_enclosure(request: Request, session: str = Query(...)):
+    """Patch enclosure fields (edge_top, edge_bottom, height_mm, top_surface).
+
+    Accepts a partial enclosure JSON object.  Only keys present in the body
+    are merged; all others are left unchanged.  Returns the full enriched
+    design dict so the frontend can re-render immediately.
+    """
+    body = await request.json()
+    s = _resolve_session(session)
+    data = s.read_artifact("design.json")
+    if data is None:
+        raise HTTPException(404, "No design yet")
+
+    enc = data.setdefault("enclosure", {})
+    for key in ("height_mm", "top_surface", "edge_top", "edge_bottom"):
+        if key in body:
+            enc[key] = body[key]
+
+    s.write_artifact("design.json", data)
+    _enrich_design_3d(data)
     return data
 
 
@@ -454,6 +532,7 @@ async def api_design(request: Request, session: str = Query(None)):
                         _enrich_components(
                             design.get("components", []), cat,
                         )
+                        _enrich_design_3d(design)
                 data = json.dumps(event.data) if event.data else "{}"
                 yield f"event: {event.type}\ndata: {data}\n\n"
 

@@ -7,15 +7,45 @@
  * ── ViewportHandler interface ──────────────────────────────────
  *   label:       string                — title shown in the viewport header
  *   placeholder: string                — message when no data is loaded
- *   render:      (el: Element, data: any) => void
- *   clear:       (el: Element) => void
+ *   render:      (el: Element, data: any) => void  — draw step content
+ *   clear:       (el: Element) => void             — reset to placeholder
+ *
+ *   Optional lifecycle hooks (primarily for 3D / WebGL renderers):
+ *   mount:       (el: Element, data?: any) => void — called when step activates
+ *   unmount:     (el: Element) => void             — called when step deactivates
+ *   onResize:    (el: Element, w: number, h: number) => void
  * ───────────────────────────────────────────────────────────────
  */
 
-const handlers = new Map();
-const cache = new Map();       // step -> last data payload
-const staleSteps = new Set(); // steps whose cached data is outdated
-let activeStep = null;
+const handlers   = new Map();
+const cache      = new Map();      // step -> last data payload
+const staleSteps = new Set();      // steps whose cached data is outdated
+const viewState  = new Map();      // step -> { mode: '2d'|'3d', camera?, ... }
+let   activeStep = null;
+
+// ── Shared WebGL renderer (single instance avoids context exhaustion) ──────
+let _sharedRenderer = null;   // populated lazily by viewport3d.js
+
+/**
+ * Get or store the single shared THREE.WebGLRenderer.
+ * viewport3d.js calls setSharedRenderer() on first use; all subsequent
+ * Three.js views reuse the same canvas / context.
+ */
+export function getSharedRenderer() { return _sharedRenderer; }
+export function setSharedRenderer(r) { _sharedRenderer = r; }
+
+/**
+ * Per-step state bag (mode, saved camera position, etc.).
+ * Initialises to { mode: '2d' } on first access.
+ */
+export function getViewState(step) {
+    if (!viewState.has(step)) viewState.set(step, { mode: '2d' });
+    return viewState.get(step);
+}
+export function patchViewState(step, patch) {
+    const s = getViewState(step);
+    Object.assign(s, patch);
+}
 
 // ── DOM refs (lazy) ───────────────────────────────────────────
 
@@ -46,15 +76,26 @@ export function registerHandler(step, handler) {
  * If cached data exists for the step, it is re-rendered automatically.
  */
 export function setStep(step) {
+    // Unmount the leaving handler
+    const prevHandler = handlers.get(activeStep);
+    const el = contentEl();
+    if (prevHandler && prevHandler.unmount && el) {
+        try { prevHandler.unmount(el); } catch (e) { console.warn('viewport unmount:', e); }
+    }
+
     activeStep = step;
     const handler = handlers.get(step);
-    const el = contentEl();
     if (!el) return;
 
     if (!handler) {
         el.innerHTML = '<p class="viewport-empty">No preview available for this step</p>';
         applyStaleClass();
         return;
+    }
+
+    // Mount the arriving handler first (so it can set up the container)
+    if (handler.mount) {
+        try { handler.mount(el, cache.get(step)); } catch (e) { console.warn('viewport mount:', e); }
     }
 
     const data = cache.get(step);
@@ -149,7 +190,27 @@ function initResize() {
 
 // Auto-init once DOM is ready
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', initResize);
+    document.addEventListener('DOMContentLoaded', init);
 } else {
+    init();
+}
+
+function init() {
     initResize();
+    initResizeObserver();
+}
+
+function initResizeObserver() {
+    const el = contentEl();
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    new ResizeObserver(entries => {
+        const entry = entries[0];
+        if (!entry) return;
+        const { width, height } = entry.contentRect;
+        const handler = handlers.get(activeStep);
+        if (handler && handler.onResize) {
+            try { handler.onResize(el, width, height); }
+            catch (e) { console.warn('viewport onResize:', e); }
+        }
+    }).observe(el);
 }

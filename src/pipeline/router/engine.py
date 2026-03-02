@@ -643,16 +643,23 @@ def _block_foreign_pins(
     all_pin_cells: dict[str, set[tuple[int, int]]],
     net_pads: list[NetPad],
     pin_radius: int = 1,
+    same_component_radius: int = 1,
 ) -> list[tuple[int, int]]:
     """Temporarily block cells around pins not belonging to the current net.
 
     Blocks a *pin_radius* neighbourhood around each foreign pin so
     that traces cannot physically overlap with pin pads of other nets.
 
+    For pins on the **same component** as any of the current net's
+    pads, a reduced *same_component_radius* is used instead.  This
+    prevents dense pin packages (e.g. DIP-28 with 2.54 mm pitch)
+    from creating impassable barriers between their own net pads
+    while still maintaining minimal clearance from adjacent pin holes.
+
     Returns the list of cells that were blocked (for later restore).
     """
-    # Collect cells belonging to this net's pads (including neighbourhood)
-    # so we never block our own reachable pad zone.
+    net_instances = {pad.instance_id for pad in net_pads}
+
     net_cells: set[tuple[int, int]] = set()
     for pad in net_pads:
         for dx in range(-pin_radius, pin_radius + 1):
@@ -660,10 +667,12 @@ def _block_foreign_pins(
                 net_cells.add((pad.gx + dx, pad.gy + dy))
 
     blocked: list[tuple[int, int]] = []
-    for _key, cells in all_pin_cells.items():
+    for key, cells in all_pin_cells.items():
+        instance_id = key.split(":", 1)[0]
+        r = same_component_radius if instance_id in net_instances else pin_radius
         for cx, cy in cells:
-            for dx in range(-pin_radius, pin_radius + 1):
-                for dy in range(-pin_radius, pin_radius + 1):
+            for dx in range(-r, r + 1):
+                for dy in range(-r, r + 1):
                     cell = (cx + dx, cy + dy)
                     if cell not in net_cells and grid.is_free(*cell):
                         grid.block_cell(*cell)
@@ -869,6 +878,17 @@ def _route_single_net(
         path = find_path_to_tree(grid, src_tree, target_tree,
                                  turn_penalty=turn_penalty)
 
+        # Fallback: allow traversal of temporarily-blocked cells
+        # (foreign-pin zones) with a heavy penalty.  Produces a path
+        # that may violate pin clearance but keeps the net connected.
+        if path is None:
+            path = find_path_to_tree(grid, src_tree, target_tree,
+                                     turn_penalty=turn_penalty,
+                                     allow_crossings=True)
+            if path is not None:
+                log.debug("  [MP] %-20s edge %d: routed via "
+                          "blocked-cell fallback", net_id, edge_idx)
+
         _unblock_foreign_pins(grid, fp_blocked)
         _restore_cells(grid, freed)
         _restore_cells(grid, freed_src)
@@ -944,6 +964,14 @@ def _route_single_net(
         # Multi-source: route from comp_tree to main_tree
         path = find_path_to_tree(grid, comp_tree, main_tree,
                                  turn_penalty=turn_penalty)
+
+        if path is None:
+            path = find_path_to_tree(grid, comp_tree, main_tree,
+                                     turn_penalty=turn_penalty,
+                                     allow_crossings=True)
+            if path is not None:
+                log.debug("  [MP] %-20s fallback: routed via "
+                          "blocked-cell fallback", net_id)
 
         _unblock_foreign_pins(grid, fp_blocked)
         _restore_cells(grid, freed)

@@ -58,6 +58,7 @@ class DesignAgent:
         # Load existing conversation from session (for multi-turn)
         saved = session.read_artifact("conversation.json")
         self.messages: list[dict] = _sanitize_messages(saved) if isinstance(saved, list) else []
+        self._feasibility_attempts: int = 0   # reset each run() call
 
     def _save_conversation(self) -> None:
         """Persist the full message history to the session folder."""
@@ -81,6 +82,7 @@ class DesignAgent:
         """
         system = _build_system_prompt(self.catalog)
         self.messages.append({"role": "user", "content": user_prompt})
+        self._feasibility_attempts = 0
 
         for turn in range(MAX_TURNS):
             content_blocks: list[dict] = []
@@ -245,6 +247,9 @@ class DesignAgent:
         if name == "submit_design":
             return self._tool_submit_design(input_data)
 
+        if name == "check_placement_feasibility":
+            return self._tool_check_feasibility(input_data), False
+
         return f"Unknown tool: {name}", False
 
     def _tool_get_component(self, input_data: dict) -> str:
@@ -257,6 +262,39 @@ class DesignAgent:
             f"Component '{component_id}' not found. "
             f"Available: {', '.join(available)}"
         )
+
+    _MAX_FEASIBILITY_ATTEMPTS = 3
+
+    def _tool_check_feasibility(self, input_data: dict) -> str:
+        from src.pipeline.placer.feasibility import run_feasibility_check
+        self._feasibility_attempts += 1
+        if self._feasibility_attempts > self._MAX_FEASIBILITY_ATTEMPTS:
+            return (
+                f"FEASIBILITY CHECK LIMIT REACHED ({self._MAX_FEASIBILITY_ATTEMPTS} attempts). "
+                f"You have been unable to find a valid layout automatically. "
+                f"Do NOT call check_placement_feasibility or submit_design again. "
+                f"Instead, respond to the user explaining: which component(s) cannot "
+                f"be placed, why (which UI components are blocking them), and what "
+                f"the user should change (e.g. larger outline, fewer UI components, "
+                f"different arrangement). Ask the user for guidance before retrying."
+            )
+        remaining = self._MAX_FEASIBILITY_ATTEMPTS - self._feasibility_attempts
+        report = run_feasibility_check(
+            self.catalog,
+            input_data.get("components", []),
+            input_data.get("outline", []),
+            input_data.get("ui_placements", []),
+        )
+        if remaining == 0:
+            report += (
+                f"\n\nWARNING: This was your last allowed feasibility check. "
+                f"If any component still shows [FAIL], do NOT call this tool again. "
+                f"Either fix the issue and call submit_design directly, or stop "
+                f"and explain the problem to the user."
+            )
+        else:
+            report += f"\n\n({remaining} feasibility check(s) remaining before limit)"
+        return report
 
     def _tool_submit_design(self, input_data: dict) -> tuple[str, bool]:
         """Parse, validate, and save a design. Returns (result, is_valid)."""

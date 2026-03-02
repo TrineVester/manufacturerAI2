@@ -1,13 +1,13 @@
 {
     "id": "battery_holder_9v",
     "name": "9V Battery Snap Connector",
-    "description": "Snap connector for standard 9V PP3 battery. Provides 9V nominal. Higher voltage allows driving more LEDs in series and supports voltage regulators. Requires bottom access for battery replacement.",
+    "description": "Horizontal holder/snap for a standard 9V PP3 battery. Battery lies flat (27×48mm footprint, 17mm tall). Provides 9V nominal. Requires bottom access for battery replacement.",
     "ui_placement": false,
     "body": {
         "shape": "rect",
         "width_mm": 27.0,
-        "length_mm": 17.0,
-        "height_mm": 48.0
+        "length_mm": 48.0,
+        "height_mm": 17.0
     },
     "mounting": {
         "style": "bottom",
@@ -27,8 +27,8 @@
             "id": "V+",
             "label": "Positive (9V)",
             "position_mm": [
-                13.5,
-                2.8
+                6.0,
+                20.0
             ],
             "direction": "out",
             "voltage_v": 9.0,
@@ -40,8 +40,8 @@
             "id": "GND",
             "label": "Ground (-)",
             "position_mm": [
-                13.5,
-                -2.8
+                -6.0,
+                20.0
             ],
             "direction": "out",
             "voltage_v": 0,

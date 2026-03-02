@@ -220,136 +220,204 @@ def place_components(
         best_pos: tuple[float, float] | None = None
         best_rot = 0
         best_score = -float("inf")
+        best_pass = 0   # which pass found the solution
+        _reject_counts: dict[str, int] = {}  # rejection reasons (last pass only)
 
-        for rotation in VALID_ROTATIONS:
-            hw, hh = footprint_halfdims(cat, rotation)
-            ehw, ehh = footprint_envelope_halfdims(cat, rotation)
+        # Three-pass placement strategy (each pass relaxes constraints
+        # further so tight boards can still be placed):
+        #
+        #   Pass 0 — full constraints: routing-channel gaps reserved,
+        #            full keepout margins, normal edge clearance.
+        #   Pass 1 — drop channel-gap reservation.  Routing will have
+        #            to use peripheral paths instead.
+        #   Pass 2 — compact mode: also halve keepout margins (floor
+        #            1 mm) and reduce edge clearance.  Components will
+        #            sit closer together; use only when the outline is
+        #            genuinely too dense for ideal spacing.
+        _PASSES = [
+            # (ignore_channel_gap, keepout_scale, edge_clearance_mm)
+            (False, 1.0, MIN_EDGE_CLEARANCE_MM),
+            (True,  1.0, MIN_EDGE_CLEARANCE_MM),
+            (True,  0.5, max(MIN_EDGE_CLEARANCE_MM * 0.5, 0.5)),
+        ]
+        for _pass, (ignore_channel_gap, keepout_scale, edge_clr) in enumerate(_PASSES):
+            if best_pos is not None:
+                break
+            _is_last_pass = (_pass == len(_PASSES) - 1)
+            if _is_last_pass:
+                _reject_counts = {}
 
-            # Inflated half-dims: the envelope (body + pins) + edge
-            # clearance must fit inside the outline.
-            ihw = ehw + MIN_EDGE_CLEARANCE_MM
-            ihh = ehh + MIN_EDGE_CLEARANCE_MM
+            for rotation in VALID_ROTATIONS:
+                hw, hh = footprint_halfdims(cat, rotation)
+                ehw, ehh = footprint_envelope_halfdims(cat, rotation)
 
-            # Scan range: outline bounding box shrunk by inflated
-            # half-dims.
-            scan_xmin = xmin + ihw
-            scan_xmax = xmax - ihw
-            scan_ymin = ymin + ihh
-            scan_ymax = ymax - ihh
+                # Inflated half-dims: the envelope (body + pins) + edge
+                # clearance must fit inside the outline.
+                ihw = ehw + edge_clr
+                ihh = ehh + edge_clr
 
-            if scan_xmin > scan_xmax or scan_ymin > scan_ymax:
-                continue
+                # Scan range: outline bounding box shrunk by inflated
+                # half-dims.
+                scan_xmin = xmin + ihw
+                scan_xmax = xmax - ihw
+                scan_ymin = ymin + ihh
+                scan_ymax = ymax - ihh
 
-            # Precompute rotated pin offsets (rotation-dependent,
-            # position-independent — just add cx, cy in inner loop).
-            _rad = math.radians(rotation)
-            _cos_r, _sin_r = math.cos(_rad), math.sin(_rad)
-            my_pin_offsets = [
-                (pin.position_mm[0] * _cos_r - pin.position_mm[1] * _sin_r,
-                 pin.position_mm[0] * _sin_r + pin.position_mm[1] * _cos_r)
-                for pin in cat.pins
-            ]
+                if scan_xmin > scan_xmax or scan_ymin > scan_ymax:
+                    continue
 
-            cx = scan_xmin
-            while cx <= scan_xmax + 1e-6:
-                cy = scan_ymin
-                while cy <= scan_ymax + 1e-6:
-                    # Hard constraint 1: inflated footprint inside outline
-                    # Uses prepared polygon for fast repeated containment.
-                    if not prep_poly.contains(
-                        shapely_box(cx - ihw, cy - ihh, cx + ihw, cy + ihh)
-                    ):
-                        cy += grid_step
-                        continue
+                # Precompute rotated pin offsets (rotation-dependent,
+                # position-independent — just add cx, cy in inner loop).
+                _rad = math.radians(rotation)
+                _cos_r, _sin_r = math.cos(_rad), math.sin(_rad)
+                my_pin_offsets = [
+                    (pin.position_mm[0] * _cos_r - pin.position_mm[1] * _sin_r,
+                     pin.position_mm[0] * _sin_r + pin.position_mm[1] * _cos_r)
+                    for pin in cat.pins
+                ]
 
-                    # Hard constraint 2: no overlap (using pin envelopes)
-                    # The required gap accounts for both keepout and
-                    # the number of trace channels that must pass
-                    # between the two components.
-                    overlap = False
-                    for p in placed:
-                        _sn_key = (min(ci.instance_id, p.instance_id),
-                                   max(ci.instance_id, p.instance_id))
-                        if _sn_key not in shared_nets_cache:
-                            shared_nets_cache[_sn_key] = count_shared_nets(
-                                ci.instance_id, p.instance_id, net_graph,
+                cx = scan_xmin
+                while cx <= scan_xmax + 1e-6:
+                    cy = scan_ymin
+                    while cy <= scan_ymax + 1e-6:
+                        # Hard constraint 1: inflated footprint inside outline
+                        # Uses prepared polygon for fast repeated containment.
+                        if not prep_poly.contains(
+                            shapely_box(cx - ihw, cy - ihh, cx + ihw, cy + ihh)
+                        ):
+                            if _is_last_pass:
+                                _reject_counts["[outline]"] = _reject_counts.get("[outline]", 0) + 1
+                            cy += grid_step
+                            continue
+
+                        # Hard constraint 2: no overlap (using pin envelopes).
+                        # Pass 0: reserve routing channels between nets.
+                        # Pass 1: drop channel reservation (routing adapts).
+                        # Pass 2: also scale down keepout margins.
+                        overlap = False
+                        for p in placed:
+                            _sn_key = (min(ci.instance_id, p.instance_id),
+                                       max(ci.instance_id, p.instance_id))
+                            if _sn_key not in shared_nets_cache:
+                                shared_nets_cache[_sn_key] = count_shared_nets(
+                                    ci.instance_id, p.instance_id, net_graph,
+                                )
+                            n_channels = shared_nets_cache[_sn_key]
+                            channel_gap = (
+                                0.0 if ignore_channel_gap
+                                else n_channels * ROUTING_CHANNEL_MM
                             )
-                        n_channels = shared_nets_cache[_sn_key]
-                        channel_gap = n_channels * ROUTING_CHANNEL_MM
-                        required_gap = max(keepout, p.keepout, channel_gap)
-                        actual_gap = aabb_gap(
-                            cx, cy, ehw, ehh,
-                            p.x, p.y, p.env_hw, p.env_hh,
-                        )
-                        if actual_gap < required_gap:
-                            overlap = True
-                            break
-                    if overlap:
-                        cy += grid_step
-                        continue
+                            my_ko  = max(keepout      * keepout_scale, 1.0)
+                            her_ko = max(p.keepout    * keepout_scale, 1.0)
+                            required_gap = max(my_ko, her_ko, channel_gap)
+                            actual_gap = aabb_gap(
+                                cx, cy, ehw, ehh,
+                                p.x, p.y, p.env_hw, p.env_hh,
+                            )
+                            if actual_gap < required_gap:
+                                overlap = True
+                                break
+                        if overlap:
+                            if _is_last_pass:
+                                _blocker_id = next(
+                                    (p.instance_id for p in placed
+                                     if aabb_gap(cx, cy, ehw, ehh, p.x, p.y, p.env_hw, p.env_hh)
+                                     < max(max(keepout * keepout_scale, 1.0),
+                                           max(p.keepout * keepout_scale, 1.0))),
+                                    "[overlap]",
+                                )
+                                _reject_counts[_blocker_id] = _reject_counts.get(_blocker_id, 0) + 1
+                            cy += grid_step
+                            continue
 
-                    # Hard constraint 3: minimum edge clearance
-                    # Check against envelope so pins don't land
-                    # outside or too close to the outline wall.
-                    edge_dist = rect_edge_clearance(
-                        cx, cy, ehw, ehh, outline_verts)
-                    if edge_dist < MIN_EDGE_CLEARANCE_MM:
-                        cy += grid_step
-                        continue
-                    # Hard constraint 4: pin-to-pin clearance
-                    # Uses precomputed pin offsets and placed pin
-                    # world positions; squared distance avoids sqrt.
-                    pin_clash = False
-                    my_pins_world = [(cx + ox, cy + oy)
-                                     for ox, oy in my_pin_offsets]
-                    for p in placed:
-                        if pin_clash:
-                            break
-                        _other_pins = placed_pin_positions.get(
-                            p.instance_id, ())
-                        for opx, opy in _other_pins:
+                        # Hard constraint 3: minimum edge clearance.
+                        edge_dist = rect_edge_clearance(
+                            cx, cy, ehw, ehh, outline_verts)
+                        if edge_dist < edge_clr:
+                            if _is_last_pass:
+                                _reject_counts["[edge_clearance]"] = _reject_counts.get("[edge_clearance]", 0) + 1
+                            cy += grid_step
+                            continue
+                        # Hard constraint 4: pin-to-pin clearance
+                        # Uses precomputed pin offsets and placed pin
+                        # world positions; squared distance avoids sqrt.
+                        pin_clash = False
+                        my_pins_world = [(cx + ox, cy + oy)
+                                         for ox, oy in my_pin_offsets]
+                        for p in placed:
                             if pin_clash:
                                 break
-                            for mpx, mpy in my_pins_world:
-                                dx, dy = mpx - opx, mpy - opy
-                                if dx * dx + dy * dy < _min_pin_sq:
-                                    pin_clash = True
+                            _other_pins = placed_pin_positions.get(
+                                p.instance_id, ())
+                            for opx, opy in _other_pins:
+                                if pin_clash:
                                     break
-                    if pin_clash:
+                                for mpx, mpy in my_pins_world:
+                                    dx, dy = mpx - opx, mpy - opy
+                                    if dx * dx + dy * dy < _min_pin_sq:
+                                        pin_clash = True
+                                        break
+                        if pin_clash:
+                            if _is_last_pass:
+                                _reject_counts["[pin_clearance]"] = _reject_counts.get("[pin_clearance]", 0) + 1
+                            cy += grid_step
+                            continue
+                        # Soft constraints: score position
+                        score = score_candidate(
+                            cx, cy, rotation, hw, hh, keepout,
+                            ci.instance_id, cat,
+                            placed, catalog_map, net_graph,
+                            outline_verts, outline_bounds,
+                            style,
+                            existing_segments,
+                            env_hw=ehw, env_hh=ehh,
+                            outline_area=outline_area,
+                            group_mates=group_mates_map.get(ci.instance_id),
+                        )
+
+                        if score > best_score:
+                            best_score = score
+                            best_pos = (cx, cy)
+                            best_rot = rotation
+                            best_pass = _pass
+
                         cy += grid_step
-                        continue
-                    # Soft constraints: score position
-                    score = score_candidate(
-                        cx, cy, rotation, hw, hh, keepout,
-                        ci.instance_id, cat,
-                        placed, catalog_map, net_graph,
-                        outline_verts, outline_bounds,
-                        style,
-                        existing_segments,
-                        env_hw=ehw, env_hh=ehh,
-                        outline_area=outline_area,
-                        group_mates=group_mates_map.get(ci.instance_id),
+                    cx += grid_step
+
+            if best_pos is not None and best_pass > 0:
+                if best_pass == 1:
+                    log.warning(
+                        "Placed %s without routing-channel reservation "
+                        "(pass 2 fallback). Routing may be tighter.",
+                        ci.instance_id,
                     )
-
-                    if score > best_score:
-                        best_score = score
-                        best_pos = (cx, cy)
-                        best_rot = rotation
-
-                    cy += grid_step
-                cx += grid_step
+                elif best_pass == 2:
+                    log.warning(
+                        "Placed %s in compact mode (pass 3 fallback): "
+                        "keepout margins and edge clearance halved. "
+                        "Components will be close together.",
+                        ci.instance_id,
+                    )
 
         if best_pos is None:
             body_w = cat.body.width_mm or cat.body.diameter_mm or 0
             body_h = cat.body.length_mm or cat.body.diameter_mm or 0
+            _top_blockers = sorted(_reject_counts.items(), key=lambda kv: -kv[1])[:5]
+            _blocker_str = ", ".join(
+                f"{k} ({v} cells)" for k, v in _top_blockers
+            ) if _top_blockers else "(no scan data)"
             raise PlacementError(
                 ci.instance_id, ci.catalog_id,
                 f"No valid position found inside the "
-                f"{xmax - xmin:.0f}×{ymax - ymin:.0f}mm outline.  "
-                f"Body is {body_w:.1f}×{body_h:.1f}mm with "
+                f"{xmax - xmin:.0f}\u00d7{ymax - ymin:.0f}mm outline.  "
+                f"Body is {body_w:.1f}\u00d7{body_h:.1f}mm with "
                 f"{keepout:.1f}mm keepout.  "
-                f"Try widening the outline or repositioning other "
-                f"components.",
+                f"Top rejection reasons: {_blocker_str}.  "
+                f"If UI-placed components (buttons/LEDs) are listed as blockers, "
+                f"reposition them to leave a contiguous clear zone large enough "
+                f"for this component. "
+                f"If [outline] dominates, the board shape is too small or narrow "
+                f"\u2014 widen the outline or reduce the component count.",
             )
 
         hw_final, hh_final = footprint_halfdims(cat, best_rot)
@@ -385,4 +453,5 @@ def place_components(
         components=result_components,
         outline=design.outline,
         nets=design.nets,
+        enclosure=design.enclosure,
     )

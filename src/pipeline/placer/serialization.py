@@ -20,25 +20,19 @@ def placement_to_dict(fp: FullPlacement) -> dict:
             }
             for c in fp.components
         ],
-        "outline": [
-            {
-                "x": p.x,
-                "y": p.y,
-                **({"ease_in": p.ease_in} if p.ease_in else {}),
-                **({"ease_out": p.ease_out} if p.ease_out else {}),
-            }
-            for p in fp.outline.points
-        ],
+        # Use to_dict() so z_top and any future vertex fields propagate automatically
+        "outline": [p.to_dict() for p in fp.outline.points],
         "nets": [
             {"id": n.id, "pins": n.pins}
             for n in fp.nets
         ],
+        "enclosure": fp.enclosure.to_dict(),
     }
 
 
 def parse_placement(data: dict) -> FullPlacement:
     """Parse a placement.json dict back into a FullPlacement."""
-    from src.pipeline.design.parsing import _parse_outline
+    from src.pipeline.design.parsing import _parse_outline, _parse_enclosure
 
     components = [
         PlacedComponent(
@@ -52,6 +46,7 @@ def parse_placement(data: dict) -> FullPlacement:
     ]
 
     outline = _parse_outline(data["outline"])
+    enclosure = _parse_enclosure(data.get("enclosure") or {})
 
     nets = [
         Net(id=n["id"], pins=list(n["pins"]))
@@ -62,4 +57,5 @@ def parse_placement(data: dict) -> FullPlacement:
         components=components,
         outline=outline,
         nets=nets,
+        enclosure=enclosure,
     )

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from src.pipeline.design.models import Outline, Net
+from src.pipeline.design.models import Outline, Net, Enclosure
 
 
 # ── Output dataclasses ─────────────────────────────────────────────
@@ -28,6 +28,11 @@ class FullPlacement:
     components: list[PlacedComponent]
     outline: Outline
     nets: list[Net]
+    enclosure: Enclosure = None  # type: ignore[assignment]
+
+    def __post_init__(self) -> None:
+        if self.enclosure is None:
+            self.enclosure = Enclosure()
 
 
 class PlacementError(Exception):

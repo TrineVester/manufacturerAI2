@@ -830,10 +830,30 @@ main {
     background: var(--bg);
 }
 
+/* ── Viewport toolbar ────────────────────────── */
+
+#viewport-toolbar {
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+    padding: 6px 10px;
+    min-height: 36px;   /* reserve space so layout doesn't jump */
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    flex-shrink: 0;
+}
+#viewport-toolbar:empty {
+    display: none;      /* collapse when no buttons */
+}
+
+/* Adjust viewport to flex-column so toolbar + content stack */
+/* (Already defined in #viewport rule above — toolbar inherits that layout.) */
+
 #viewport-content {
     flex: 1;
     overflow-y: auto;
     padding: 16px;
+    position: relative;
     transition: filter 0.25s, opacity 0.25s;
 }
 
@@ -988,6 +1008,43 @@ main {
     display: flex;
     flex-direction: column;
     gap: 20px;
+}
+
+/* ── Viewport: 2D/3D toggle button ──────────── */
+
+.vp-3d-toggle-btn {
+    padding: 4px 14px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: var(--mono);
+    letter-spacing: 0.8px;
+    color: #0d1117;
+    background: var(--accent);
+    border: none;
+    border-radius: calc(var(--radius) / 2);
+    cursor: pointer;
+    transition: opacity 0.15s;
+}
+.vp-3d-toggle-btn:hover {
+    opacity: 0.82;
+}
+
+.vp-3d-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    font-size: 13px;
+    font-style: italic;
+    pointer-events: none;
+}
+
+.vp-3d-host {
+    width: 100%;
+    min-height: 480px;
+    height: 100%;
 }
 
 .vp-placed-body {
@@ -1612,3 +1669,143 @@ main {
 .guide-comp:hover { filter: brightness(1.2); }
 
 
+/* ── Edge Profile Panel (floating overlay on 3D viewport) ──────────── */
+
+.ep-panel {
+    position: absolute;
+    bottom: 14px;
+    right: 14px;
+    z-index: 20;
+    width: 160px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+    font-size: 12px;
+    color: var(--text);
+    user-select: none;
+}
+
+.ep-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px 6px;
+    border-bottom: 1px solid var(--border);
+}
+
+.ep-title {
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.5px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+}
+
+.ep-close {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 0 2px;
+}
+.ep-close:hover { color: var(--text); }
+
+.ep-body {
+    padding: 8px 10px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.ep-tabs {
+    display: flex;
+    gap: 4px;
+}
+
+.ep-tab {
+    flex: 1;
+    padding: 4px 0;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s;
+}
+.ep-tab:hover       { background: #21293a; color: var(--text); }
+.ep-tab-active      { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+
+.ep-types {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.ep-type-opt {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 4px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.1s;
+}
+.ep-type-opt:hover { background: var(--surface2); }
+.ep-type-opt input[type="radio"] {
+    accent-color: var(--accent);
+    cursor: pointer;
+    margin: 0;
+}
+
+.ep-size-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-top: 2px;
+    border-top: 1px solid var(--border);
+}
+
+.ep-size-lbl {
+    font-size: 11px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+}
+
+.ep-size-slider {
+    flex: 1;
+    height: 4px;
+    accent-color: var(--accent);
+    cursor: pointer;
+    min-width: 0;
+}
+
+.ep-size-val {
+    font-size: 11px;
+    font-family: var(--mono);
+    color: var(--accent);
+    flex-shrink: 0;
+    min-width: 40px;
+    text-align: right;
+}
+
+.ep-type-icon {
+    font-size: 12px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+    width: 14px;
+    display: inline-block;
+    text-align: center;
+}
+
+.ep-hint {
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.3;
+    margin-top: 2px;
+    font-style: italic;
+}

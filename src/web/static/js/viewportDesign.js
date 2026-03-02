@@ -17,21 +17,52 @@
 
 import { registerHandler } from './viewport.js';
 import { drawComponentIcon } from './componentRenderer.js';
+import { normaliseOutline, buildOutlinePath, snapToEdge, esc, SCALE, PAD, NS, attachViewToggle } from './viewportUtils.js';
+import { state, API } from './state.js';
 
-// ── Register ──────────────────────────────────────────────────
+// ── Toggle controller ───────────────────────────────────────────
+
+const _toggle = attachViewToggle(
+    'design',
+    (el, design) => { el.innerHTML = ''; el.appendChild(buildPreview(design)); },
+    async (host) => {
+        const { create3DScene } = await import('./viewport3d.js');
+        const scene = create3DScene(host);
+        // Wrap to also manage the edge profile panel overlay
+        let panel = null;
+        return {
+            update(data) {
+                scene.update(data);
+                if (!panel) {
+                    panel = _mountEdgePanel(host, data, scene);
+                } else {
+                    panel.syncData(data);
+                }
+            },
+            resize(w, h) { scene.resize(w, h); },
+            destroy() {
+                if (panel) { panel.destroy(); panel = null; }
+                scene.destroy();
+            },
+        };
+    },
+);
+
+// ── Register ────────────────────────────────────────────────
 
 registerHandler('design', {
     label: 'Design Preview',
     placeholder: 'Submit a design prompt to see the preview',
 
-    render(el, design) {
-        el.innerHTML = '';
-        el.appendChild(buildPreview(design));
-    },
+    render(el, design) { _toggle.render(el, design); },
 
     clear(el) {
+        _toggle.clear(el);
         el.innerHTML = '<p class="viewport-empty">Submit a design prompt to see the preview</p>';
     },
+
+    unmount()        { _toggle.unmount(); },
+    onResize(el,w,h) { _toggle.resize(w, h); },
 });
 
 
@@ -50,9 +81,6 @@ function buildPreview(design) {
 
 
 // ── Outline SVG ───────────────────────────────────────────────
-
-const SCALE = 4;     // mm → px
-const PAD   = 32;    // px padding around the SVG content
 
 function buildOutlineSVG(design) {
     const { outline, ui_placements = [] } = design;
@@ -79,7 +107,6 @@ function buildOutlineSVG(design) {
     // Screen convention: y=0 at top, y increases downward (matches SVG).
     const oy = PAD - minY * SCALE;
 
-    const NS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(NS, 'svg');
     svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
     svg.setAttribute('class', 'vp-outline-svg');
@@ -133,7 +160,7 @@ function buildOutlineSVG(design) {
 
         if (up.edge_index != null) {
             // Side-mount — snap to wall, then draw component icon
-            const snapInfo = _snapToEdge(up, verts);
+            const snapInfo = snapToEdge(up, verts, normaliseOutline(design.outline).zTops, (design.enclosure?.height_mm ?? 25));
             if (comp && comp.body) {
                 const fakeComp = {
                     ...comp,
@@ -354,145 +381,123 @@ function drawSideMountMarker(svg, NS, up, outline, ox, oy) {
 }
 
 
-// ── Outline normalisation ─────────────────────────────────────
+// ── Edge Profile Panel ─────────────────────────────────────────────────────────
 
 /**
- * Normalise outline to a consistent internal shape:
- *   { verts: [[x,y],...], corners: [{ease_in, ease_out},...] }
+ * Mount a floating edge-profile control panel overlaid on the 3D viewport host.
+ * Lets the user pick top / bottom wall profile (sharp, chamfer, fillet) and size,
+ * live-previews changes via scene.update(), and persists via PATCH API.
  *
- * Input: [{ x, y, ease_in?, ease_out? }, ...]
+ * Returns { syncData(data), destroy() }.
  */
-function normaliseOutline(outline) {
-    if (!outline || !Array.isArray(outline)) return { verts: [], corners: [] };
+function _mountEdgePanel(host, initialData, scene) {
+    let design = initialData;
 
-    const verts = outline.map(p => [p.x, p.y]);
-    const corners = outline.map(p => {
-        let ein = p.ease_in ?? null;
-        let eout = p.ease_out ?? null;
-        // If only one side given, mirror to the other (symmetric)
-        if (ein != null && eout == null) eout = ein;
-        if (eout != null && ein == null) ein = eout;
-        return { ease_in: ein ?? 0, ease_out: eout ?? 0 };
+    const panel = document.createElement('div');
+    panel.className = 'ep-panel';
+    panel.innerHTML = `
+        <div class="ep-header">
+            <span class="ep-title">Wall Edge</span>
+            <button class="ep-close" title="Close">✕</button>
+        </div>
+        <div class="ep-body">
+            <div class="ep-tabs">
+                <button class="ep-tab ep-tab-active" data-side="top" title="Where wall meets lid">Top</button>
+                <button class="ep-tab" data-side="bottom" title="Where wall meets floor">Bottom</button>
+            </div>
+            <div class="ep-types">
+                <label class="ep-type-opt" title="Sharp 90° corner">
+                    <input type="radio" name="ep-type" value="none" checked>
+                    <span class="ep-type-icon">▐</span> Sharp
+                </label>
+                <label class="ep-type-opt" title="Flat 45° bevel">
+                    <input type="radio" name="ep-type" value="chamfer">
+                    <span class="ep-type-icon">◥</span> Chamfer
+                </label>
+                <label class="ep-type-opt" title="Smooth curved round-over">
+                    <input type="radio" name="ep-type" value="fillet">
+                    <span class="ep-type-icon">◜</span> Fillet
+                </label>
+            </div>
+            <div class="ep-size-row" hidden>
+                <span class="ep-size-lbl">Size</span>
+                <input type="range" class="ep-size-slider" min="0.5" max="10" step="0.5" value="3">
+                <span class="ep-size-val">3.0 mm</span>
+            </div>
+            <p class="ep-hint">Viewed from the side — the wall edge profile</p>
+        </div>
+    `;
+    host.appendChild(panel);
+
+    let activeSide = 'top';
+
+    const _profileFor = (side) =>
+        (design.enclosure ?? {})[`edge_${side}`] ?? { type: 'none', size_mm: 2.0 };
+
+    function _refreshUI() {
+        const prof = _profileFor(activeSide);
+        const type = prof.type ?? 'none';
+        panel.querySelectorAll('[name="ep-type"]').forEach(r => { r.checked = (r.value === type); });
+        const size = prof.size_mm ?? 3.0;
+        panel.querySelector('.ep-size-slider').value = size;
+        panel.querySelector('.ep-size-val').textContent = size.toFixed(1) + ' mm';
+        panel.querySelector('.ep-size-row').hidden = (type === 'none');
+    }
+
+    async function _apply(side, type, size_mm) {
+        if (!design.enclosure) design.enclosure = { height_mm: 25 };
+        design.enclosure[`edge_${side}`] = { type, size_mm };
+        scene.update(design);   // live preview
+
+        const sid = state.session;
+        if (!sid) return;
+        try {
+            await fetch(`${API}/api/session/design/enclosure?session=${encodeURIComponent(sid)}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ [`edge_${side}`]: { type, size_mm } }),
+            });
+        } catch { /* non-fatal — user sees the live preview regardless */ }
+    }
+
+    // Tab clicks
+    panel.querySelectorAll('.ep-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+            activeSide = btn.dataset.side;
+            panel.querySelectorAll('.ep-tab').forEach(b =>
+                b.classList.toggle('ep-tab-active', b.dataset.side === activeSide));
+            _refreshUI();
+        });
     });
-    return { verts, corners };
-}
 
+    // Radio changes
+    panel.querySelectorAll('[name="ep-type"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            if (!radio.checked) return;
+            const type = radio.value;
+            const size = parseFloat(panel.querySelector('.ep-size-slider').value);
+            panel.querySelector('.ep-size-row').hidden = (type === 'none');
+            _apply(activeSide, type, size);
+        });
+    });
 
-// ── Helpers ───────────────────────────────────────────────────
+    // Slider changes (apply on release for performance, preview on input)
+    const slider = panel.querySelector('.ep-size-slider');
+    slider.addEventListener('input', () => {
+        panel.querySelector('.ep-size-val').textContent = parseFloat(slider.value).toFixed(1) + ' mm';
+    });
+    slider.addEventListener('change', () => {
+        const type = panel.querySelector('[name="ep-type"]:checked')?.value ?? 'none';
+        if (type !== 'none') _apply(activeSide, type, parseFloat(slider.value));
+    });
 
-function esc(text) {
-    const el = document.createElement('span');
-    el.textContent = text ?? '';
-    return el.innerHTML;
-}
+    // Close
+    panel.querySelector('.ep-close').addEventListener('click', () => panel.remove());
 
+    _refreshUI();
 
-// ── Outline path with rounded corners ─────────────────────────
-
-/**
- * Build an SVG path `d` string for the outline polygon.
- * Sharp corners get straight line-to; eased corners get a quadratic
- * Bézier with the vertex as the control point and tangent points
- * at ease_in / ease_out distances along the adjacent edges.
- *
- * When ease_in == ease_out the curve is symmetric (close to a circular arc).
- * When they differ the curve is asymmetric / oblong.
- */
-function buildOutlinePath(verts, edges, ox, oy, scale) {
-    const n = verts.length;
-    if (n < 3) return '';
-
-    // Convert vertices to screen coords (screen convention: no Y flip)
-    const pts = verts.map(v => ({ x: ox + v[0] * scale, y: oy + v[1] * scale }));
-
-    // Pre-compute ease info per vertex in px
-    const corners = [];
-    for (let i = 0; i < n; i++) {
-        const edge = edges[i] ?? { ease_in: 0, ease_out: 0 };
-        const eIn  = (edge.ease_in  ?? 0) * scale;
-        const eOut = (edge.ease_out ?? 0) * scale;
-        corners.push({ round: eIn > 0 || eOut > 0, eIn, eOut });
-    }
-
-    const segments = [];
-
-    for (let i = 0; i < n; i++) {
-        const prev = (i - 1 + n) % n;
-        const next = (i + 1) % n;
-        const P = pts[prev], C = pts[i], N = pts[next];
-
-        if (!corners[i].round) {
-            // Sharp corner — just go to the vertex
-            if (i === 0) segments.push(`M ${C.x} ${C.y}`);
-            else segments.push(`L ${C.x} ${C.y}`);
-            continue;
-        }
-
-        // Rounded corner — tangent points at ease distances from C
-        let { eIn, eOut } = corners[i];
-
-        // Direction vectors from C toward P and N
-        const dPx = P.x - C.x, dPy = P.y - C.y;
-        const dNx = N.x - C.x, dNy = N.y - C.y;
-        const lenP = Math.hypot(dPx, dPy);
-        const lenN = Math.hypot(dNx, dNy);
-
-        if (lenP === 0 || lenN === 0) {
-            if (i === 0) segments.push(`M ${C.x} ${C.y}`);
-            else segments.push(`L ${C.x} ${C.y}`);
-            continue;
-        }
-
-        // Clamp so we don't exceed ~45% of either adjacent edge
-        eIn  = Math.min(eIn,  lenP * 0.45);
-        eOut = Math.min(eOut, lenN * 0.45);
-
-        // Tangent points: t1 on incoming edge, t2 on outgoing edge
-        const t1x = C.x + (dPx / lenP) * eIn;
-        const t1y = C.y + (dPy / lenP) * eIn;
-        const t2x = C.x + (dNx / lenN) * eOut;
-        const t2y = C.y + (dNy / lenN) * eOut;
-
-        // Line to the first tangent point
-        if (i === 0) segments.push(`M ${t1x} ${t1y}`);
-        else segments.push(`L ${t1x} ${t1y}`);
-
-        // Quadratic Bézier: control point = vertex, end = second tangent
-        segments.push(`Q ${C.x} ${C.y} ${t2x} ${t2y}`);
-    }
-
-    segments.push('Z');
-    return segments.join(' ');
-}
-
-
-// ── Edge snap helper ──────────────────────────────────────────
-
-/**
- * Snap a UI placement onto its outline edge and compute rotation.
- * Returns { x, y, rot } in mm.
- */
-function _snapToEdge(up, verts) {
-    const n = verts.length;
-    const i = up.edge_index;
-    const v0 = verts[i];
-    const v1 = verts[(i + 1) % n];
-    const ex = v1[0] - v0[0], ey = v1[1] - v0[1];
-    const edgeLen = Math.hypot(ex, ey);
-    if (edgeLen === 0) return { x: up.x_mm, y: up.y_mm, rot: 0 };
-
-    const dx = ex / edgeLen, dy = ey / edgeLen;
-    const px = up.x_mm - v0[0], py = up.y_mm - v0[1];
-    let t = (px * dx + py * dy) / edgeLen;
-    t = Math.max(0, Math.min(1, t));
-
-    const x = v0[0] + t * ex;
-    const y = v0[1] + t * ey;
-
-    // Outward normal rotation (same logic as Python _edge_rotation)
-    const angle = Math.atan2(ey, ex) * 180 / Math.PI;
-    const normalAngle = angle - 90;
-    const rot = ((Math.round(normalAngle / 90) * 90) % 360 + 360) % 360;
-
-    return { x, y, rot };
+    return {
+        syncData(data) { design = data; _refreshUI(); },
+        destroy()      { panel.remove(); },
+    };
 }

@@ -101,6 +101,7 @@
         <!-- Right: step-dependent viewport -->
         <div id="viewport-resize-handle"></div>
         <aside id="viewport">
+            <div id="viewport-toolbar"></div>
             <div id="viewport-content">
                 <p class="viewport-empty">No preview available</p>
             </div>
@@ -186,6 +187,14 @@
         </div>
     </div>
 
+    <script type="importmap">
+    {
+        "imports": {
+            "three":                      "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+            "three/addons/":              "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+        }
+    }
+    </script>
     <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>

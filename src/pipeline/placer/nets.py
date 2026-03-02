@@ -164,16 +164,19 @@ def build_placement_groups(
     # ── BFS-order within each group ───────────────────────────────
     def _bfs_order(members: list[str]) -> list[str]:
         member_set = set(members)
-        # Start BFS from the highest-degree member (hub)
-        seed = max(members, key=lambda i: (degrees.get(i, 0), area_map.get(i, 0)))
+        # Start BFS from the largest-footprint member.  This ensures
+        # the biggest component claims space first; smaller parts
+        # then fit into the remaining area.  Degree breaks ties so
+        # highly-connected same-size components are still hubs.
+        seed = max(members, key=lambda i: (area_map.get(i, 0), degrees.get(i, 0)))
         visited: list[str] = []
         queue = [seed]
         seen = {seed}
         while queue:
-            # Within the current frontier, prioritise high-degree
-            # components, breaking ties by area (largest first).
+            # Within the current frontier, prioritise large area
+            # first, then high degree, so the ordering is stable.
             queue.sort(
-                key=lambda i: (degrees.get(i, 0), area_map.get(i, 0)),
+                key=lambda i: (area_map.get(i, 0), degrees.get(i, 0)),
                 reverse=True,
             )
             current = queue.pop(0)
