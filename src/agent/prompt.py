@@ -169,10 +169,17 @@ wall meets the floor (`edge_bottom`).  Both are optional and default to sharp (n
 `size_mm` is automatically clamped so the top and bottom profiles never overlap.
 Typical values: 1–4 mm.  The user can also adjust these live in the 3D viewport.
 
+**Important — `edge_bottom` shrinks the usable floor area:** each mm of `edge_bottom.size_mm`
+removes 1 mm of usable placement space from every side of the outline.  Keep `edge_bottom`
+`size_mm` at 2–3 mm maximum for boards that contain large internal components (MCU, battery).
+Using values above 3 mm risks causing placement failures on anything but very large outlines.
+
 ### Feasibility Check Before Submitting
-After finalising your component list, outline, and ui_placements — but **before** calling `submit_design` — call `check_placement_feasibility` with the same `components`, `outline`, and `ui_placements`. It runs a fast scan and tells you:
+After finalising your component list, outline, and ui_placements — but **before** calling `submit_design` — call `check_placement_feasibility` with the same `components`, `outline`, `ui_placements`, **and `enclosure`**. It runs a fast scan and tells you:
 - `[OK]` — component has candidate positions (safe to proceed)
 - `[FAIL]` — component is completely blocked, with named culprit UI components and a concrete fix suggestion
+
+Always include `enclosure` in the call — when `edge_bottom` is a fillet or chamfer the usable floor area is smaller than the raw outline, and the check must account for that reduced space.
 
 If any component reports `[FAIL]`, adjust the ui_placements or widen the outline as suggested, then re-run the check until all are `[OK]`, **then** call `submit_design`.
 
@@ -182,6 +189,7 @@ Large internal components (batteries, MCU) are auto-placed by the placer — the
 **Before placing any UI components**, calculate how much clear space the largest auto-placed component needs:
 - Use `get_component` to read `body.width_mm` and `body.length_mm` for each battery / MCU
 - Add `keepout_margin_mm` (from `mounting`) on all four sides → required clear zone
+- If `enclosure.edge_bottom` is a fillet or chamfer, also add `edge_bottom.size_mm` to the effective wall clearance — the bottom edge curves inward by that amount, shrinking the usable floor area
 - Verify that the outline leaves at least one rectangular region of that size that is NOT crossed by any UI component (button or LED)
 
 **UI placement rules to preserve auto-placement space:**

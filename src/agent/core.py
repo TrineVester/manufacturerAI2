@@ -284,6 +284,7 @@ class DesignAgent:
             input_data.get("components", []),
             input_data.get("outline", []),
             input_data.get("ui_placements", []),
+            enclosure_raw=input_data.get("enclosure"),
         )
         if remaining == 0:
             report += (

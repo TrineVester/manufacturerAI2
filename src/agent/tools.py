@@ -295,6 +295,14 @@ TOOLS: list[dict[str, Any]] = [
                         "required": ["instance_id", "x_mm", "y_mm"],
                     },
                 },
+                "enclosure": {
+                    "type": "object",
+                    "description": (
+                        "Same enclosure object as submit_design. "
+                        "Required when edge_bottom is a fillet or chamfer so the "
+                        "feasibility scan accounts for the reduced floor space."
+                    ),
+                },
             },
             "required": ["components", "outline", "ui_placements"],
         },

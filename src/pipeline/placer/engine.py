@@ -122,6 +122,15 @@ def place_components(
         raise PlacementError("_outline", "_outline",
                              "Outline polygon is invalid or has zero area")
 
+    # A bottom fillet or chamfer curves the wall inward at floor level by
+    # exactly size_mm.  Components placed within that zone would sit inside
+    # the curved wall material, so we add it to every pass's edge clearance.
+    # Cap to 42% of height_mm — same rule the 3-D renderer uses in JS.
+    _ebot = design.enclosure.edge_bottom
+    _raw_inset = _ebot.size_mm if _ebot.type in ("fillet", "chamfer") else 0.0
+    _max_inset = design.enclosure.height_mm * 0.42
+    floor_inset = min(_raw_inset, _max_inset)
+
     # Build net connectivity graph
     net_graph = build_net_graph(design.nets)
     outline_area = outline_poly.area
@@ -236,9 +245,10 @@ def place_components(
         #            genuinely too dense for ideal spacing.
         _PASSES = [
             # (ignore_channel_gap, keepout_scale, edge_clearance_mm)
-            (False, 1.0, MIN_EDGE_CLEARANCE_MM),
-            (True,  1.0, MIN_EDGE_CLEARANCE_MM),
-            (True,  0.5, max(MIN_EDGE_CLEARANCE_MM * 0.5, 0.5)),
+            # floor_inset is a hard physical minimum — never relaxed.
+            (False, 1.0, MIN_EDGE_CLEARANCE_MM + floor_inset),
+            (True,  1.0, MIN_EDGE_CLEARANCE_MM + floor_inset),
+            (True,  0.5, max(MIN_EDGE_CLEARANCE_MM * 0.5, 0.5) + floor_inset),
         ]
         for _pass, (ignore_channel_gap, keepout_scale, edge_clr) in enumerate(_PASSES):
             if best_pos is not None:

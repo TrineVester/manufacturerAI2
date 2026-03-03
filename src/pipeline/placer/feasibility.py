@@ -153,8 +153,26 @@ def run_feasibility_check(
     components: list[dict],        # [{catalog_id, instance_id, ...}]
     outline_raw: list[dict],       # [{x, y, ...}]
     ui_placements_raw: list[dict], # [{instance_id, x_mm, y_mm}]
+    enclosure_raw: dict | None = None,  # enclosure dict with optional edge_bottom
 ) -> str:
     """Return a plain-text feasibility report suitable for feeding back to the LLM."""
+
+    cat_map: dict[str, Component] = {c.id: c for c in catalog.components}
+
+    # A bottom fillet/chamfer curves the wall inward at floor level — add its
+    # size to the effective edge clearance so the scan respects the real floor area.
+    # Cap to 42% of height_mm — same rule the 3-D renderer uses in JS.
+    floor_inset = 0.0
+    if enclosure_raw:
+        ebot = enclosure_raw.get("edge_bottom") or {}
+        if ebot.get("type") in ("fillet", "chamfer"):
+            try:
+                raw_inset = float(ebot.get("size_mm", 2.0))
+                max_inset = float(enclosure_raw.get("height_mm", 25.0)) * 0.42
+                floor_inset = min(raw_inset, max_inset)
+            except (TypeError, ValueError):
+                pass
+    effective_edge_clr = MIN_EDGE_CLEARANCE_MM + floor_inset
 
     cat_map: dict[str, Component] = {c.id: c for c in catalog.components}
 
@@ -238,7 +256,7 @@ def run_feasibility_check(
                 cat_comp, inst_id,
                 prep_poly, (xmin, ymin, xmax, ymax),
                 ui_obstacles,
-                edge_clr=MIN_EDGE_CLEARANCE_MM,
+                edge_clr=effective_edge_clr,
             )
         )
 
