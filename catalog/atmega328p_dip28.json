@@ -15,7 +15,7 @@
             "internal"
         ],
         "blocks_routing": false,
-        "keepout_margin_mm": 4.0
+        "keepout_margin_mm": 5.0
     },
     "pins": [
         {

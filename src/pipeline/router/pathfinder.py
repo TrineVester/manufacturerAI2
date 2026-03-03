@@ -15,6 +15,12 @@ import heapq
 from .grid import RoutingGrid, FREE, TRACE_PATH, PERMANENTLY_BLOCKED
 from .models import TURN_PENALTY, CROSSING_PENALTY
 
+# Per-cell extra cost treated as "strong avoidance" for component bodies.
+# A detour of N cells beats going through N/12 body cells — enough to
+# redirect short-to-medium routes around components without causing
+# failures when no external path exists (e.g. resistor far from its pin).
+BODY_EXTRA = 12
+
 
 # Manhattan directions: (dx, dy)
 DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1))
@@ -108,7 +114,7 @@ def find_path(
                     continue
 
             is_turn = direction != -1 and direction != d
-            cost = 1 + (turn_penalty if is_turn else 0)
+            cost = 1 + (turn_penalty if is_turn else 0) + grid._cost_map.get(nkey, 0)
             tentative_g = cur_g + cost
 
             if nkey not in g_scores or tentative_g < g_scores[nkey]:
@@ -251,7 +257,7 @@ def find_path_to_tree(
                     continue
 
             is_turn = direction != -1 and direction != d
-            cost = 1 + (turn_penalty if is_turn else 0)
+            cost = 1 + (turn_penalty if is_turn else 0) + grid._cost_map.get(nkey, 0)
             if not cell_free and not is_tree_cell:
                 cost += CROSSING_PENALTY
             tentative_g = cur_g + cost
@@ -292,6 +298,7 @@ def _l_route(
 
     # Cache grid internals as locals
     cells = grid._cells
+    cost_map = grid._cost_map
     W = grid.width
     H = grid.height
 
@@ -310,6 +317,8 @@ def _l_route(
                 return None
             if val != FREE and (x, y) != sink:
                 return None
+            if cost_map.get(y * W + x, 0):   # avoid soft-cost zones — let A* decide
+                return None
             path.append((x, y))
         # Vertical leg
         dy = 1 if ty > sy else -1
@@ -321,6 +330,8 @@ def _l_route(
             if val == TRACE_PATH:
                 return None
             if val != FREE and (x, y) != sink:
+                return None
+            if cost_map.get(y * W + x, 0):
                 return None
             path.append((x, y))
     else:
@@ -336,6 +347,8 @@ def _l_route(
                 return None
             if val != FREE and (x, y) != sink:
                 return None
+            if cost_map.get(y * W + x, 0):
+                return None
             path.append((x, y))
         # Horizontal leg
         dx = 1 if tx > sx else -1
@@ -347,6 +360,8 @@ def _l_route(
             if val == TRACE_PATH:
                 return None
             if val != FREE and (x, y) != sink:
+                return None
+            if cost_map.get(y * W + x, 0):
                 return None
             path.append((x, y))
 

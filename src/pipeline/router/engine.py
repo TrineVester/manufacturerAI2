@@ -156,6 +156,7 @@ def route_traces(
     )
     pad_radius = _compute_pad_radius(config)
     _block_components(base_grid, placement, catalog_map, config.grid_resolution_mm, pad_radius)
+    _register_avoidance_zones(base_grid, placement, catalog_map)
 
     # ── 4. Route with rip-up ──────────────────────────────────────
     result = _route_with_ripup(
@@ -290,6 +291,38 @@ def _block_components(
                 for dy in range(-1, 2):
                     grid.force_free_cell(gx + dx, gy + dy)
                     grid.protect_cell(gx + dx, gy + dy)
+
+
+def _register_avoidance_zones(
+    grid: RoutingGrid,
+    placement: FullPlacement,
+    catalog_map: dict,
+) -> None:
+    """Register soft-cost avoidance zones around every component body.
+
+    The body + keepout rectangle of each component is added to the grid's
+    cost map so the A* pathfinder strongly prefers to route *around* it.
+    The cost is high enough that any detour <BODY_EXTRA cells longer than
+    the straight-through path will be taken instead, but not infinite —
+    traces that genuinely must reach a pin through the body area can still
+    do so.
+
+    The keepout margin used here is half the component's keepout_margin_mm
+    so the avoidance zone matches the clearance band the placer reserves.
+    """
+    from .pathfinder import BODY_EXTRA  # local import avoids circular dep
+    for pc in placement.components:
+        cat = catalog_map.get(pc.catalog_id)
+        if cat is None:
+            continue
+        hw, hh = footprint_halfdims(cat, pc.rotation_deg)
+        keepout = cat.mounting.keepout_margin_mm
+        grid.add_cost_zone_rect_world(
+            pc.x_mm, pc.y_mm,
+            hw + keepout, hh + keepout,
+            extra_cost=BODY_EXTRA,
+        )
+
 
 def _carve_escape_channel(
     grid: RoutingGrid,

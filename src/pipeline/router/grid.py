@@ -56,6 +56,11 @@ class RoutingGrid:
         # them so nearby pads stay reachable.
         self._protected: set[tuple[int, int]] = set()
 
+        # Soft-cost map: cell_index -> extra A* travel cost.
+        # Cells here are still FREE but strongly discouraged so the router
+        # prefers to route around component bodies when a detour exists.
+        self._cost_map: dict[int, int] = {}
+
         # Block cells outside polygon or too close to its edges
         inset_poly = outline_poly.buffer(-edge_clearance)
         for gy in range(self.height):
@@ -154,6 +159,33 @@ class RoutingGrid:
                 else:
                     self.block_cell(gx, gy)
 
+    def add_cost_zone_rect_world(
+        self,
+        cx_mm: float, cy_mm: float,
+        half_w_mm: float, half_h_mm: float,
+        extra_cost: int,
+    ) -> None:
+        """Add extra A* travel cost to all cells inside a world-space rectangle.
+
+        Cells remain FREE (routable) but the A* pathfinder will strongly
+        prefer any path that avoids this zone unless no cheaper route exists.
+        """
+        left   = cx_mm - half_w_mm
+        right  = cx_mm + half_w_mm
+        bottom = cy_mm - half_h_mm
+        top    = cy_mm + half_h_mm
+
+        gx_min = max(0, int(math.floor((left   - self.origin_x) / self.resolution)))
+        gx_max = min(self.width  - 1, int(math.ceil((right  - self.origin_x) / self.resolution)))
+        gy_min = max(0, int(math.floor((bottom - self.origin_y) / self.resolution)))
+        gy_max = min(self.height - 1, int(math.ceil((top    - self.origin_y) / self.resolution)))
+
+        W = self.width
+        for gy in range(gy_min, gy_max + 1):
+            for gx in range(gx_min, gx_max + 1):
+                idx = gy * W + gx
+                self._cost_map[idx] = self._cost_map.get(idx, 0) + extra_cost
+
     def protect_cell(self, gx: int, gy: int) -> None:
         """Mark a cell as a protected pin pad position.
 
@@ -245,6 +277,7 @@ class RoutingGrid:
         g.height = self.height
         g._cells = bytearray(self._cells)
         g._protected = set(self._protected)
+        g._cost_map = dict(self._cost_map)
         g.outline_poly = self.outline_poly
         return g
 

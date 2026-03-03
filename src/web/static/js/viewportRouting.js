@@ -227,13 +227,14 @@ function drawTrace(svg, trace, ox, oy, color) {
     const path = trace.path;
     if (!path || path.length < 2) return;
 
-    // Main trace line
+    // Main trace line — stroke-width matches physical trace width (1 mm × SCALE px/mm)
+    const TRACE_W_PX = 1.0 * SCALE;   // 4 px = 1 mm at current scale
     const points = path.map(p => `${ox + p[0] * SCALE},${oy + p[1] * SCALE}`).join(' ');
     const polyline = document.createElementNS(NS, 'polyline');
     polyline.setAttribute('points', points);
     polyline.setAttribute('fill', 'none');
     polyline.setAttribute('stroke', color);
-    polyline.setAttribute('stroke-width', '2.5');
+    polyline.setAttribute('stroke-width', String(TRACE_W_PX));
     polyline.setAttribute('stroke-linecap', 'round');
     polyline.setAttribute('stroke-linejoin', 'round');
     polyline.setAttribute('opacity', '0.85');

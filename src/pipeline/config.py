@@ -23,14 +23,16 @@ class TraceRules:
     trace_width_mm: float = 1.0
     """Width of a single conductive-ink trace."""
 
-    trace_clearance_mm: float = 2.0
+    trace_clearance_mm: float = 1.5
     """Minimum edge-to-edge gap between two traces (or a trace and
-    another net's clearance zone)."""
+    another net's clearance zone).  1.5 mm gives a 2 mm physical gap
+    between trace edges, providing a safe margin for conductive-ink
+    deposition tolerances and preventing crosstalk / accidental shorts."""
 
-    pin_clearance_mm: float = 1.3
+    pin_clearance_mm: float = 1.0
     """Minimum gap from a trace edge to a foreign pin centre.
-    Set to roughly half the DIP-28 pin pitch (2.54 / 2 ≈ 1.27 mm),
-    rounded up for manufacturing margin."""
+    1.0 mm — keeps well clear of adjacent DIP-28 pins (2.54 mm pitch)
+    without adjacent blocked zones overlapping on the 0.5 mm grid."""
 
     edge_clearance_mm: float = 1.5
     """Minimum distance from a trace to the outline edge."""
