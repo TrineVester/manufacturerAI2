@@ -122,6 +122,13 @@ export function setData(step, data) {
 }
 
 /**
+ * Retrieve the last cached data for a step (or undefined if none).
+ */
+export function getData(step) {
+    return cache.get(step);
+}
+
+/**
  * Clear cached data (and viewport) for a step (or all steps).
  */
 export function clearData(step) {

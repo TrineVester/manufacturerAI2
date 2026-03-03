@@ -31,7 +31,7 @@ const MAT = {
     component     : (colHex) => new THREE.MeshPhongMaterial({ color: colHex, shininess: 60 }),
     wallFill      : () => new THREE.MeshPhongMaterial({
         color: 0x4a6888, side: THREE.FrontSide,
-        transparent: true, opacity: 0.10, shininess: 0,
+        transparent: true, opacity: 0.35, shininess: 0,
         depthWrite: false,
     }),
     lidFill       : () => new THREE.MeshPhongMaterial({
@@ -166,7 +166,7 @@ export function create3DScene(container) {
 
 // ── Scene content builder ─────────────────────────────────────────────────────
 
-function buildSceneContent(data) {
+export function buildSceneContent(data) {
     const group = new THREE.Group();
     if (!data) return group;
 
@@ -516,7 +516,7 @@ function buildLid(pts, expandedZ, defaultH, heightGrid) {
  * Priority: bilinear grid → IDW from boundary pts → defaultH.
  */
 function _lidSampleHeight(x, y, boundaryPts, boundaryZ, heightGrid, defaultH) {
-    const gridZ = _gridSampleHeight(x, y, heightGrid);
+    const gridZ = heightGrid ? _gridSampleHeight(x, y, heightGrid) : null;
     if (gridZ !== null) return gridZ;
 
     // Vertex falls outside the grid mask (spike tip or just outside border).

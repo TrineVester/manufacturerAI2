@@ -2,6 +2,7 @@
 
 import { API, state } from './state.js';
 import { setData as setViewportData, setStale } from './viewport.js';
+import { enableScadTab } from './scad.js';
 
 function addStaleBanner(el, msg) {
     if (!el) return;
@@ -111,6 +112,7 @@ export async function runRouting() {
         renderResult(data);
         setViewportData('routing', data);
         stopTabFlash();
+        enableScadTab(true);
     } catch (e) {
         if (rerun) {
             rerun.textContent = '❌ Error';
@@ -144,6 +146,7 @@ export async function loadRoutingResult() {
         renderResult(data);
         setViewportData('routing', data);
         stopTabFlash();
+        enableScadTab(true);
     } catch {
         // No routing available yet — that's fine
     }

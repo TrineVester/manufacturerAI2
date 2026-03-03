@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 
 from fastapi import FastAPI, Query, HTTPException, Request
@@ -20,12 +21,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+# compile state: session_id -> {status, message, cancel}
+_stl_compile: dict[str, dict] = {}
+
 from src.catalog import load_catalog, catalog_to_dict, CatalogResult
 from src.session import create_session, load_session, list_sessions, Session
 from src.agent import DesignAgent, TOOLS, MODEL, THINKING_BUDGET, TOKEN_BUDGET, _build_system_prompt, _prune_messages
 from src.pipeline.design import parse_design, validate_design
 from src.pipeline.placer import place_components, placement_to_dict, parse_placement, PlacementError
 from src.pipeline.router import route_traces, routing_to_dict
+from src.pipeline.scad import run_scad_step
 from src.web.naming import generate_session_name
 
 import anthropic
@@ -184,6 +189,7 @@ async def api_get_session(session: str = Query(...)):
             "design": s.has_artifact("design.json"),
             "placement": s.has_artifact("placement.json"),
             "routing": s.has_artifact("routing.json"),
+            "scad": s.has_artifact("enclosure.scad"),
         },
     }
 
@@ -403,6 +409,129 @@ async def api_routing_result(session: str = Query(...)):
         if "body" not in comp or "pins" not in comp:
             _enrich_components([comp], cat)
     return data
+
+
+# ── Routes: SCAD API ─────────────────────────────────────────────
+
+@app.post("/api/session/scad")
+async def api_run_scad(session: str = Query(...)):
+    """Generate enclosure.scad from placement + routing.  Saves to session folder."""
+    s = _resolve_session(session)
+    if s.read_artifact("placement.json") is None:
+        raise HTTPException(400, "No placement.json — run the placer first")
+    if s.read_artifact("routing.json") is None:
+        raise HTTPException(400, "No routing.json — run the router first")
+
+    try:
+        scad_path = run_scad_step(s)
+    except Exception as exc:
+        raise HTTPException(
+            422,
+            detail={"error": "scad_failed", "reason": str(exc)},
+        )
+
+    scad_text = scad_path.read_text(encoding="utf-8")
+    return {
+        "status": "done",
+        "scad_lines": scad_text.count("\n"),
+        "scad_bytes": len(scad_text),
+    }
+
+
+@app.get("/api/session/scad/result")
+async def api_scad_result(session: str = Query(...)):
+    """Return the generated enclosure.scad text, if available."""
+    s = _resolve_session(session)
+    scad_path = s.path / "enclosure.scad"
+    if not scad_path.exists():
+        raise HTTPException(404, "No enclosure.scad yet -- run /api/session/scad first")
+    scad_text = scad_path.read_text(encoding="utf-8")
+    return {
+        "status": "done",
+        "scad": scad_text,
+        "scad_lines": scad_text.count("\n"),
+        "scad_bytes": len(scad_text),
+    }
+
+
+@app.post("/api/session/scad/compile")
+async def api_compile_stl(session: str = Query(...), force: bool = Query(False)):
+    """Start background STL compilation for the session's enclosure.scad.
+
+    Pass ``force=true`` to restart compilation even if a previous attempt
+    finished with an error (or succeeded).
+    """
+    s = _resolve_session(session)
+    scad_path = s.path / "enclosure.scad"
+    if not scad_path.exists():
+        raise HTTPException(400, "No enclosure.scad yet -- run /api/session/scad first")
+
+    stl_path = s.path / "enclosure.stl"
+
+    # Already done (and not forcing a redo)
+    if not force and stl_path.exists() and session not in _stl_compile:
+        return {"status": "done", "stl_bytes": stl_path.stat().st_size}
+
+    # Already compiling
+    cur = _stl_compile.get(session)
+    if cur and cur["status"] == "compiling" and not force:
+        return {"status": "compiling"}
+
+    # Return cached status if done/error (and not forcing)
+    if not force and cur and cur["status"] in ("done", "error"):
+        return {"status": cur["status"], "message": cur.get("message", ""),
+                "stl_bytes": stl_path.stat().st_size if stl_path.exists() else 0}
+
+    # Cancel any in-flight compile when forcing
+    if force and cur and cur.get("cancel"):
+        cur["cancel"].set()
+
+    # Start a new compile
+    cancel = threading.Event()
+    _stl_compile[session] = {"status": "compiling", "cancel": cancel, "message": ""}
+
+    def _do_compile():
+        from src.pipeline.scad.compiler import compile_scad
+        ok, msg, out = compile_scad(scad_path, stl_path, cancel=cancel, timeout=600)
+        _stl_compile[session] = {
+            "status": "done" if ok else "error",
+            "message": msg,
+            "cancel": cancel,
+        }
+
+    threading.Thread(target=_do_compile, daemon=True).start()
+    return {"status": "compiling"}
+
+
+@app.get("/api/session/scad/compile")
+async def api_compile_stl_status(session: str = Query(...)):
+    """Poll the STL compilation status for the session."""
+    s = _resolve_session(session)
+    stl_path = s.path / "enclosure.stl"
+    state = _stl_compile.get(session)
+    if state:
+        out = {"status": state["status"], "message": state.get("message", "")}
+        if state["status"] == "done" and stl_path.exists():
+            out["stl_bytes"] = stl_path.stat().st_size
+        return out
+    # Not in state dict — check if file exists on disk
+    if stl_path.exists():
+        return {"status": "done", "stl_bytes": stl_path.stat().st_size}
+    return {"status": "pending"}
+
+
+@app.get("/api/session/scad/stl")
+async def api_serve_stl(session: str = Query(...)):
+    """Serve the compiled enclosure.stl as a binary download."""
+    s = _resolve_session(session)
+    stl_path = s.path / "enclosure.stl"
+    if not stl_path.exists():
+        raise HTTPException(404, "No enclosure.stl yet -- compile first")
+    return FileResponse(
+        stl_path,
+        media_type="application/octet-stream",
+        filename="enclosure.stl",
+    )
 
 
 # ── Routes: Design Agent API ──────────────────────────────────────

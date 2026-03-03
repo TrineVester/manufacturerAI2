@@ -7,7 +7,8 @@ import { loadConversation } from './design.js';
 import { loadPlacementResult, resetPlacementPanel } from './placement.js';
 import { clearData as clearViewportData, setStep } from './viewport.js';
 import { enableGuideBtn, closeGuide } from './guide.js';
-import { resetRoutingPanel } from './routing.js';
+import { resetRoutingPanel, loadRoutingResult } from './routing.js';
+import { resetScadPanel, loadScadResult } from './scad.js';
 
 export function setSessionLabel(id, name) {
     const label = document.getElementById('session-label');
@@ -56,6 +57,13 @@ export function startNewSession() {
     if (routingBtn) {
         routingBtn.disabled = true;
         routingBtn.classList.remove('tab-flash');
+    }
+    // Reset SCAD panel and disable tab
+    resetScadPanel();
+    const scadBtn = document.querySelector('#pipeline-nav .step[data-step="scad"]');
+    if (scadBtn) {
+        scadBtn.disabled = true;
+        scadBtn.classList.remove('tab-flash');
     }
     // Switch to design tab
     state.activeStep = 'design';
@@ -143,7 +151,11 @@ export async function showSessionsModal() {
                     placementBtn.disabled = !hasDesign;
                     placementBtn.classList.remove('tab-flash');
                 }
-                if (hasDesign) loadPlacementResult();
+                if (hasDesign) {
+                    loadPlacementResult();
+                    loadRoutingResult();   // restore routing viewport data
+                    loadScadResult();      // restore SCAD + STL status (may resume compile)
+                }
             });
         });
     } catch (err) {
