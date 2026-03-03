@@ -57,6 +57,10 @@ export function expandOutlineVertices(verts, corners, zTopRaw, defaultZ, segs = 
     const n   = verts.length;
     const pts = [];
     const zs  = [];
+    // Index in `pts` that best represents each original corner vertex.
+    // For uneased corners it's the exact vertex; for eased corners it's the
+    // midpoint of the bezier arc (closest expanded point to the original corner).
+    const cornerIndices = [];
 
     for (let i = 0; i < n; i++) {
         const prev = (i - 1 + n) % n;
@@ -68,13 +72,19 @@ export function expandOutlineVertices(verts, corners, zTopRaw, defaultZ, segs = 
         const eIn  = corners[i].ease_in  ?? 0;
         const eOut = corners[i].ease_out ?? 0;
 
-        if (eIn === 0 && eOut === 0) { pts.push(C); zs.push(zC); continue; }
+        if (eIn === 0 && eOut === 0) {
+            cornerIndices.push(pts.length);
+            pts.push(C); zs.push(zC); continue;
+        }
 
         const dPx = P[0]-C[0], dPy = P[1]-C[1];
         const dNx = N[0]-C[0], dNy = N[1]-C[1];
         const lenP = Math.hypot(dPx, dPy);
         const lenN = Math.hypot(dNx, dNy);
-        if (lenP === 0 || lenN === 0) { pts.push(C); zs.push(zC); continue; }
+        if (lenP === 0 || lenN === 0) {
+            cornerIndices.push(pts.length);
+            pts.push(C); zs.push(zC); continue;
+        }
 
         const safeIn  = Math.min(eIn,  lenP * 0.45);
         const safeOut = Math.min(eOut, lenN * 0.45);
@@ -82,6 +92,9 @@ export function expandOutlineVertices(verts, corners, zTopRaw, defaultZ, segs = 
         const t2 = [C[0] + dNx*(safeOut/lenN), C[1] + dNy*(safeOut/lenN)];
         const zT1 = zC + (zP - zC) * (safeIn  / lenP);
         const zT2 = zC + (zN - zC) * (safeOut / lenN);
+
+        // Midpoint of arc (s = segs/2) is the point closest to the original corner C.
+        cornerIndices.push(pts.length + Math.floor(segs / 2));
 
         for (let s = 0; s <= segs; s++) {
             const u = s / segs, ku = 1 - u;
@@ -92,7 +105,7 @@ export function expandOutlineVertices(verts, corners, zTopRaw, defaultZ, segs = 
             zs.push(ku*ku*zT1 + 2*ku*u*zC + u*u*zT2);
         }
     }
-    return { pts, zs };
+    return { pts, zs, cornerIndices };
 }
 
 

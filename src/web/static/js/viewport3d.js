@@ -26,19 +26,20 @@ const PALETTE = [
 ];
 
 const MAT = {
-    // Enclosure walls: translucent so components inside are visible.
-    enclosureWall : () => new THREE.MeshPhongMaterial({
-        color: 0x5a7090, side: THREE.DoubleSide,
-        transparent: true, opacity: 0.30, shininess: 25,
-    }),
-    // Lid — visible but translucent, like frosted glass.
-    enclosureLid  : () => new THREE.MeshPhongMaterial({
-        color: 0x99ccff, side: THREE.DoubleSide,
-        transparent: true, opacity: 0.40, depthWrite: false, shininess: 80,
-    }),
-    pcb           : () => new THREE.MeshPhongMaterial({ color: 0x2e7d3a, shininess: 20, side: THREE.DoubleSide }),
+    pcb           : () => new THREE.MeshPhongMaterial({ color: 0x1c3824, shininess: 10, side: THREE.DoubleSide }),
     trace         : (colHex) => new THREE.LineBasicMaterial({ color: colHex, linewidth: 2 }),
     component     : (colHex) => new THREE.MeshPhongMaterial({ color: colHex, shininess: 60 }),
+    wallFill      : () => new THREE.MeshPhongMaterial({
+        color: 0x4a6888, side: THREE.FrontSide,
+        transparent: true, opacity: 0.10, shininess: 0,
+        depthWrite: false,
+    }),
+    lidFill       : () => new THREE.MeshPhongMaterial({
+        color: 0x5a7898, side: THREE.FrontSide,
+        transparent: true, opacity: 0.18, shininess: 0,
+        depthWrite: false,
+        polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+    }),
 };
 
 // ── Renderer singleton ────────────────────────────────────────────────────────
@@ -71,6 +72,8 @@ export function create3DScene(container) {
 
     const scene  = new THREE.Scene();
     scene.background = new THREE.Color(0x0d1117);
+    // Subtle depth fog — makes distant lines quietly fade into the bg
+    scene.fog = new THREE.FogExp2(0x0d1117, 0.0028);
 
     const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 10000);
     camera.position.set(50, 100, 150);
@@ -89,6 +92,11 @@ export function create3DScene(container) {
     const fillLight = new THREE.DirectionalLight(0xaac8ff, 0.55);
     fillLight.position.set(-80, 60, -120);
     scene.add(fillLight);
+
+    // Ground grid — low-contrast reference plane anchors the model in space
+    const grid = new THREE.GridHelper(400, 40, 0x1a2a3a, 0x151f2a);
+    grid.position.y = -0.5;
+    scene.add(grid);
 
     // Current content group
     let contentGroup = null;
@@ -132,7 +140,8 @@ export function create3DScene(container) {
                 const size   = box.getSize(new THREE.Vector3());
                 const maxDim = Math.max(size.x, size.y, size.z);
                 const dist   = maxDim * 1.8 / Math.tan((camera.fov / 2) * Math.PI / 180);
-                camera.position.set(center.x + dist * 0.5, center.y + dist * 0.7, center.z + dist);
+                // Classic 30° elevation product-CAD angle — more frontal, less top-down
+                camera.position.set(center.x + dist * 0.65, center.y + dist * 0.50, center.z + dist * 0.85);
                 camera.lookAt(center);
                 controls.target.copy(center);
                 controls.update();
@@ -173,20 +182,10 @@ function buildSceneContent(data) {
     const defaultZ = enclosure.height_mm ?? 25;
     // Expand bezier corners into sub-points so walls, floor, lid, and
     // wireframe all follow the same smooth rounded profile as the 2D view.
-    const { pts: expanded, zs: expandedZ } = expandOutlineVertices(
+    const { pts: expanded, zs: expandedZ, cornerIndices } = expandOutlineVertices(
         verts, corners, zTops, defaultZ);
 
-    // 1. Enclosure shell
-    const shellGroup = buildEnclosureShell(expanded, expandedZ, enclosure, heightGrid);
-    group.add(shellGroup);
-
-    // 2. PCB floor
-    group.add(buildPCBFloor(expanded));
-
-    // 3. Placed components
-    // At the design step, x_mm/y_mm live in ui_placements (not on the
-    // component objects themselves).  Build a lookup so each component
-    // can resolve its position; skip any that have no position yet.
+    // Build ui_placements lookup before shell so lid cutouts can use it.
     const uiPos = {};
     (data.ui_placements ?? []).forEach(up => {
         uiPos[up.instance_id] = {
@@ -196,6 +195,14 @@ function buildSceneContent(data) {
         };
     });
 
+    // 1. Enclosure shell
+    const shellGroup = buildEnclosureShell(expanded, expandedZ, enclosure, heightGrid, components, uiPos, cornerIndices);
+    group.add(shellGroup);
+
+    // 2. PCB floor
+    group.add(buildPCBFloor(expanded));
+
+    // 3. Placed components
     const FLOOR_Z = 2;  // mm above PCB floor
     components.forEach((comp, i) => {
         // Resolve position: prefer explicit x_mm (placement step), fall back
@@ -225,7 +232,7 @@ function buildSceneContent(data) {
 
 // pts: expanded bezier polygon [[x,y],...]
 // expandedZ: per-point ceiling heights already interpolated from z_top vertices
-function buildEnclosureShell(pts, expandedZ, enclosure, heightGrid) {
+function buildEnclosureShell(pts, expandedZ, enclosure, heightGrid, compList = [], uiPosMap = {}, cornerIndices = []) {
     const group = new THREE.Group();
     const eTop  = enclosure.edge_top;
     const eBot  = enclosure.edge_bottom;
@@ -248,62 +255,140 @@ function buildEnclosureShell(pts, expandedZ, enclosure, heightGrid) {
         return [cx + dx * f, cz + dz * f];
     }
 
-    // ── Side walls ────────────────────────────────────────────────────────────
-    // One quad strip per wall segment, one quad per profile row.
-    const wallPos = [];
-    const wallIdx = [];
-    let vi = 0;
+    // ── Wall fill — very low opacity solid, gives volume without obscuring internals ─
+    {
+        const wallPos = [], wallIdx = [];
+        let vi = 0;
+        for (let i = 0; i < N; i++) {
+            const j  = (i + 1) % N;
+            const x0 = pts[i][0], y0 = pts[i][1], z0 = expandedZ[i];
+            const x1 = pts[j][0], y1 = pts[j][1], z1 = expandedZ[j];
+            const profL = _edgeProfile(z0, eBot, eTop);
+            const profR = _edgeProfile(z1, eBot, eTop);
+            for (let k = 0; k < profL.length - 1; k++) {
+                const { h: hLb, off: oLb } = profL[k];
+                const { h: hLt, off: oLt } = profL[k + 1];
+                const { h: hRb, off: oRb } = profR[k];
+                const { h: hRt, off: oRt } = profR[k + 1];
+                const [xLb, zLb] = insetPt(x0, y0, oLb);
+                const [xLt, zLt] = insetPt(x0, y0, oLt);
+                const [xRb, zRb] = insetPt(x1, y1, oRb);
+                const [xRt, zRt] = insetPt(x1, y1, oRt);
+                wallPos.push(xLb, hLb, zLb, xLt, hLt, zLt, xRt, hRt, zRt, xRb, hRb, zRb);
+                wallIdx.push(vi, vi+1, vi+2, vi, vi+2, vi+3);
+                vi += 4;
+            }
+        }
+        const wallGeo = new THREE.BufferGeometry();
+        wallGeo.setAttribute('position', new THREE.Float32BufferAttribute(wallPos, 3));
+        wallGeo.setIndex(wallIdx);
+        wallGeo.computeVertexNormals();
+        const wallMesh = new THREE.Mesh(wallGeo, MAT.wallFill());
+        wallMesh.renderOrder = 0;
+        group.add(wallMesh);
+    }
 
-    for (let i = 0; i < N; i++) {
-        const j   = (i + 1) % N;
-        const x0  = pts[i][0], y0 = pts[i][1], z0 = expandedZ[i];
-        const x1  = pts[j][0], y1 = pts[j][1], z1 = expandedZ[j];
+    const outlineMat = new THREE.LineBasicMaterial({ color: 0x90c8ff });
 
-        const profL = _edgeProfile(z0, eBot, eTop);
-        const profR = _edgeProfile(z1, eBot, eTop);
+    // ── Lid surface (wireframe) with component cutout rings ─────────────────
+    {
+        const lidPts = pts.map((v, i) => {
+            const prof = _edgeProfile(expandedZ[i], eBot, eTop);
+            const { off } = prof[prof.length - 1];
+            return insetPt(v[0], v[1], off);
+        });
 
-        for (let k = 0; k < profL.length - 1; k++) {
-            const { h: hLb, off: oLb } = profL[k];
-            const { h: hLt, off: oLt } = profL[k + 1];
-            const { h: hRb, off: oRb } = profR[k];
-            const { h: hRt, off: oRt } = profR[k + 1];
+        // Build outline shape with holes punched for every UI-placed component.
+        const CLR = 0.5;   // mm clearance around each cutout (used in rings below)
+        const defH = enclosure.height_mm ?? 25;
 
-            const [xLb, zLb] = insetPt(x0, y0, oLb);
-            const [xLt, zLt] = insetPt(x0, y0, oLt);
-            const [xRb, zRb] = insetPt(x1, y1, oRb);
-            const [xRt, zRt] = insetPt(x1, y1, oRt);
+        // Lid fill mesh — caps the wall fill so walls don't visually bleed above the lid.
+        // Interior heights use grid/IDW; the tessellated mesh covers the full surface.
+        {
+            const lidShape = new THREE.Shape(lidPts.map(v => new THREE.Vector2(v[0], v[1])));
+            const lidGeo   = new THREE.ShapeGeometry(lidShape);
+            lidGeo.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI / 2));
+            const pos = lidGeo.attributes.position;
+            for (let i = 0; i < pos.count; i++) {
+                pos.setY(i, _lidSampleHeight(pos.getX(i), pos.getZ(i), lidPts, expandedZ, heightGrid, defH));
+            }
+            pos.needsUpdate = true;
+            lidGeo.computeVertexNormals();
+            const lidMesh = new THREE.Mesh(lidGeo, MAT.lidFill());
+            lidMesh.renderOrder = 1;
+            group.add(lidMesh);
+        }
 
-            wallPos.push(
-                xLb, hLb, zLb,
-                xRb, hRb, zRb,
-                xRt, hRt, zRt,
-                xLt, hLt, zLt,
-            );
-            wallIdx.push(vi, vi+1, vi+2,  vi, vi+2, vi+3);
-            vi += 4;
+        // Lid wireframe: perimeter ring pinned directly to expandedZ[i] at each
+        // boundary point — bypasses grid/IDW which can differ at horn/chin tips.
+        const lidLoopPts = lidPts.map((v, i) =>
+            new THREE.Vector3(v[0], expandedZ[i] + 0.15, v[1])
+        );
+        lidLoopPts.push(lidLoopPts[0].clone());
+        group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(lidLoopPts), outlineMat));
+
+        // Spoke lines from centroid to each original corner — reads clearly as
+        // a surface and reflects the actual corner structure of the design.
+        if (cornerIndices.length >= 2) {
+            const ocx = lidPts.reduce((s, v) => s + v[0], 0) / lidPts.length;
+            const ocy = lidPts.reduce((s, v) => s + v[1], 0) / lidPts.length;
+            const ch  = _lidSampleHeight(ocx, ocy, lidPts, expandedZ, heightGrid, defH) + 0.15;
+            const hub = new THREE.Vector3(ocx, ch, ocy);
+            for (const ci of cornerIndices) {
+                const v  = lidPts[ci];
+                // Pin to expandedZ directly — same as wall profile top, no grid mismatch.
+                const vh = expandedZ[ci] + 0.15;
+                group.add(new THREE.Line(
+                    new THREE.BufferGeometry().setFromPoints([
+                        hub, new THREE.Vector3(v[0], vh, v[1]),
+                    ]), outlineMat));
+            }
+        }
+
+        // Draw a bright outline ring around every cutout so it reads clearly.
+        const cutoutMat = new THREE.LineBasicMaterial({ color: 0xffdd66 });
+        const RING_SEGS = 24;
+        for (const comp of compList) {
+            if (!comp.ui_placement) continue;
+            let x = comp.x_mm, y = comp.y_mm;
+            if (x == null || y == null) {
+                const ui = uiPosMap[comp.instance_id];
+                if (!ui) continue;
+                x = ui.x_mm; y = ui.y_mm;
+            }
+            const body = comp.body;
+            if (!body) continue;
+
+            // Sample lid height at cutout centre for ring height
+            const rh = _lidSampleHeight(x, y, lidPts, expandedZ, heightGrid, defH) + 0.2;
+
+            let ringPts;
+            if (body.shape === 'circle') {
+                const r = comp.cap_diameter_mm != null
+                    ? (comp.cap_diameter_mm / 2 + (comp.cap_clearance_mm ?? CLR))
+                    : (body.diameter_mm / 2 + CLR);
+                ringPts = [];
+                for (let s = 0; s <= RING_SEGS; s++) {
+                    const a = (s / RING_SEGS) * Math.PI * 2;
+                    ringPts.push(new THREE.Vector3(x + Math.cos(a) * r, rh, y + Math.sin(a) * r));
+                }
+            } else {
+                const hw = ((body.width_mm  ?? 6) / 2) + CLR;
+                const hh = ((body.length_mm ?? 6) / 2) + CLR;
+                ringPts = [
+                    new THREE.Vector3(x - hw, rh, y - hh),
+                    new THREE.Vector3(x + hw, rh, y - hh),
+                    new THREE.Vector3(x + hw, rh, y + hh),
+                    new THREE.Vector3(x - hw, rh, y + hh),
+                    new THREE.Vector3(x - hw, rh, y - hh),
+                ];
+            }
+            group.add(new THREE.Line(
+                new THREE.BufferGeometry().setFromPoints(ringPts), cutoutMat));
         }
     }
 
-    const wallGeo = new THREE.BufferGeometry();
-    wallGeo.setAttribute('position', new THREE.Float32BufferAttribute(wallPos, 3));
-    wallGeo.setIndex(wallIdx);
-    wallGeo.computeVertexNormals();
-    group.add(new THREE.Mesh(wallGeo, MAT.enclosureWall()));
-
-    // ── Lid ───────────────────────────────────────────────────────────────────
-    // The lid boundary must match where the wall tops actually sit — i.e. the
-    // inset polygon at the top-profile offset.  Without this the lid overhangs
-    // or falls short of the wall edge (visible at horns / varying-height areas).
-    const lidPts = pts.map((v, i) => {
-        const prof = _edgeProfile(expandedZ[i], eBot, eTop);
-        const { off } = prof[prof.length - 1];
-        return insetPt(v[0], v[1], off);
-    });
-    const lidGeo = buildLid(lidPts, expandedZ, enclosure.height_mm ?? 25, heightGrid);
-    if (lidGeo) group.add(new THREE.Mesh(lidGeo, MAT.enclosureLid()));
-
     // ── Wireframe ─────────────────────────────────────────────────────────────
-    const outlineMat = new THREE.LineBasicMaterial({ color: 0x90c8ff });
 
     // Bottom loop — inset by the floor-level offset of each vertex's profile
     const botLoopPts = pts.map((v, i) => {
@@ -314,20 +399,13 @@ function buildEnclosureShell(pts, expandedZ, enclosure, heightGrid) {
     botLoopPts.push(botLoopPts[0].clone());
     group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(botLoopPts), outlineMat));
 
-    // Top loop — inset by the lid-level offset of each vertex's profile
-    const topLoopPts = pts.map((v, i) => {
-        const prof = _edgeProfile(expandedZ[i], eBot, eTop);
-        const last = prof[prof.length - 1];
-        const [ix, iz] = insetPt(v[0], v[1], last.off);
-        return new THREE.Vector3(ix, last.h, iz);
-    });
-    topLoopPts.push(topLoopPts[0].clone());
-    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(topLoopPts), outlineMat));
+    // (Top loop is drawn above as lidLoopPts with IDW height warping.)
 
-    // Vertical pillars — trace the full profile curve at every (SEGS+1)th vertex
-    const SEGS = 6;
+    // Vertical pillars — one per original design corner for clean, intentional lines
+    const pillarSet = new Set(cornerIndices.length > 0 ? cornerIndices : []);
+    // Fallback: if no cornerIndices provided, every 7th point (old behaviour)
     pts.forEach((v, i) => {
-        if (i % (SEGS + 1) !== 0) return;
+        if (pillarSet.size > 0 ? !pillarSet.has(i) : (i % 7 !== 0)) return;
         const prof = _edgeProfile(expandedZ[i], eBot, eTop);
         const pillarPts = prof.map(({ h, off }) => {
             const [ix, iz] = insetPt(v[0], v[1], off);
@@ -417,17 +495,17 @@ function buildLid(pts, expandedZ, defaultH, heightGrid) {
     // Rotate XY → XZ: Three.js y becomes height
     geo.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI / 2));
 
-    if (heightGrid) {
-        const pos = geo.attributes.position;
-        for (let i = 0; i < pos.count; i++) {
-            const dx = pos.getX(i);
-            const dy = pos.getZ(i);   // design y lives in Three.js z after rotation
-            pos.setY(i, _lidSampleHeight(dx, dy, pts, expandedZ, heightGrid, defaultH));
-        }
-        pos.needsUpdate = true;
-    } else {
-        geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, defaultH, 0));
+    // Always warp vertex heights — first try the grid, then fall back to IDW
+    // from the boundary heights (expandedZ).  This ensures the lid matches
+    // the actual wall tops everywhere, including horn tips that sit higher
+    // than the flat enclosure.height_mm default.
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+        const dx = pos.getX(i);
+        const dy = pos.getZ(i);   // design y lives in Three.js z after rotation
+        pos.setY(i, _lidSampleHeight(dx, dy, pts, expandedZ, heightGrid, defaultH));
     }
+    pos.needsUpdate = true;
 
     geo.computeVertexNormals();
     return geo;
@@ -508,12 +586,12 @@ function buildPCBFloor(pts) {
     geo.applyMatrix4(new THREE.Matrix4().makeTranslation(0, 0.5, 0));   // 0.5 mm above 0
     const mesh = new THREE.Mesh(geo, MAT.pcb());
 
-    // Perimeter outline so the board edge reads clearly.
+    // Perimeter outline so the board edge reads clearly (muted to not compete with enclosure).
     const rimPts = pts.map(v => new THREE.Vector3(v[0], 0.6, v[1]));
     rimPts.push(rimPts[0].clone());
     const rimLine = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(rimPts),
-        new THREE.LineBasicMaterial({ color: 0x80ff80 }),
+        new THREE.LineBasicMaterial({ color: 0x4a8a5a }),
     );
 
     const group = new THREE.Group();
@@ -547,6 +625,16 @@ function buildComponentBox(comp, floorZ, colorHex) {
 
     mesh.position.set(x, floorZ + H / 2, y);
     mesh.rotation.y = -rot;   // negative: Three.js Y-up rotation counter-clockwise from top
+
+    // Edge outline in a lighter tint of the same colour — keeps wireframe style
+    const edgeGeo  = new THREE.EdgesGeometry(geo, 15);  // threshold 15° skips micro-facets
+    const edgeCol  = new THREE.Color(colorHex).lerp(new THREE.Color(0xffffff), 0.45);
+    const edgeLine = new THREE.LineSegments(
+        edgeGeo,
+        new THREE.LineBasicMaterial({ color: edgeCol }),
+    );
+    mesh.add(edgeLine);
+
     return mesh;
 }
 

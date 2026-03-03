@@ -300,6 +300,10 @@ def _enrich_components(components: list, cat) -> None:
             {"id": p.id, "position_mm": list(p.position_mm)}
             for p in c.pins
         ]
+        comp["ui_placement"] = c.ui_placement
+        if c.mounting and c.mounting.cap:
+            comp["cap_diameter_mm"] = c.mounting.cap.diameter_mm
+            comp["cap_clearance_mm"] = c.mounting.cap.hole_clearance_mm
 
 
 def _enrich_design_3d(data: dict) -> None:
