@@ -93,7 +93,7 @@ function createScadScene(container) {
 
     function resize(w, h) {
         if (!w || !h) return;
-        renderer.setSize(w, h, false);
+        renderer.setSize(w, h);
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
         renderer.render(scene, camera);
