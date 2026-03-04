@@ -139,7 +139,7 @@ export function create3DScene(container) {
                 const center = box.getCenter(new THREE.Vector3());
                 const size   = box.getSize(new THREE.Vector3());
                 const maxDim = Math.max(size.x, size.y, size.z);
-                const dist   = maxDim * 1.8 / Math.tan((camera.fov / 2) * Math.PI / 180);
+                const dist   = maxDim * 1.1 / Math.tan((camera.fov / 2) * Math.PI / 180);
                 // Classic 30° elevation product-CAD angle — more frontal, less top-down
                 camera.position.set(center.x + dist * 0.65, center.y + dist * 0.50, center.z + dist * 0.85);
                 camera.lookAt(center);
