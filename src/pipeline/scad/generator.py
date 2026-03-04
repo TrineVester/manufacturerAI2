@@ -113,6 +113,7 @@ def run_scad_step(
         body_lines, cuts,
         session_id=session.id,
         metadata=metadata,
+        outline_pts=flat_pts,
     )
 
     # ── 7. Write to session folder ────────────────────────────────
