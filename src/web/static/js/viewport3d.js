@@ -455,8 +455,9 @@ function _edgeProfile(z_top, eBot, eTop) {
     } else if (botType === 'fillet') {
         for (let k = 0; k <= ARC; k++) {
             const a = (k / ARC) * (Math.PI / 2);
-            // Quarter-circle: (h=0, off=botS) → (h=botS, off=0)
-            pts.push({ h: botS * Math.sin(a), off: botS * Math.cos(a) });
+            // Quarter-circle: center at (botS, botS), matches layers.py convention.
+            // (h=0, off=botS) → (h=botS, off=0), curving the same direction as topType fillet.
+            pts.push({ h: botS * (1 - Math.cos(a)), off: botS * (1 - Math.sin(a)) });
         }
     } else {
         pts.push({ h: 0, off: 0 });
