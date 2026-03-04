@@ -398,7 +398,7 @@ function _mountEdgePanel(host, initialData, scene) {
     panel.innerHTML = `
         <div class="ep-header">
             <span class="ep-title">Wall Edge</span>
-            <button class="ep-close" title="Close">✕</button>
+            <button class="ep-collapse" title="Collapse">▼</button>
         </div>
         <div class="ep-body">
             <div class="ep-tabs">
@@ -427,7 +427,8 @@ function _mountEdgePanel(host, initialData, scene) {
             <p class="ep-hint">Viewed from the side — the wall edge profile</p>
         </div>
     `;
-    host.appendChild(panel);
+    // Mount in the viewport toolbar so it sits above the 3D scene, not over it
+    (document.getElementById('viewport-toolbar') ?? host).appendChild(panel);
 
     let activeSide = 'top';
 
@@ -491,8 +492,15 @@ function _mountEdgePanel(host, initialData, scene) {
         if (type !== 'none') _apply(activeSide, type, parseFloat(slider.value));
     });
 
-    // Close
-    panel.querySelector('.ep-close').addEventListener('click', () => panel.remove());
+    let _collapsed = false;
+    const _body = panel.querySelector('.ep-body');
+    const _collapseBtn = panel.querySelector('.ep-collapse');
+    _collapseBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        _collapsed = !_collapsed;
+        _body.style.display = _collapsed ? 'none' : '';
+        _collapseBtn.textContent = _collapsed ? '▲' : '▼';
+    });
 
     _refreshUI();
 
