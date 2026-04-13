@@ -1,11 +1,11 @@
 {
     "id": "led_5mm",
     "name": "5mm LED",
-    "description": "Standard 5mm through-hole LED. Wavelength/color chosen by the agent at design time. Requires a current-limiting resistor. Anode (+) connects to positive supply through resistor, cathode (-) to ground. Forward voltage varies by color: IR ~1.2V, Red ~2.0V, Orange ~2.1V, Yellow ~2.1V, Green ~2.2V, Blue ~3.2V, White ~3.3V, UV ~3.4V.",
+    "description": "Standard 5mm through-hole LED. Doubles as an IR transmitter for remote controls (select IR color, drive at 38kHz PWM). Requires a current-limiting resistor. Anode (+) connects to positive supply through resistor, cathode (-) to ground.",
     "ui_placement": true,
     "body": {
         "shape": "circle",
-        "diameter_mm": 5.0,
+        "diameter_mm": 5.4,
         "height_mm": 8.5
     },
     "mounting": {
@@ -17,43 +17,74 @@
         "blocks_routing": false,
         "keepout_margin_mm": 1.0
     },
+    "pin_length_mm": 26.45,
     "pins": [
         {
             "id": "anode",
             "label": "Anode (+)",
             "position_mm": [
-                1.27,
+                1.0,
                 0
             ],
             "direction": "in",
             "voltage_v": null,
             "current_max_ma": 20,
-            "hole_diameter_mm": 0.8,
+            "hole_diameter_mm": 0.6,
             "description": "Positive terminal. Connect through current-limiting resistor to V+."
         },
         {
             "id": "cathode",
             "label": "Cathode (-)",
             "position_mm": [
-                -1.27,
+                -1.0,
                 0
             ],
             "direction": "in",
             "voltage_v": 0,
             "current_max_ma": 20,
-            "hole_diameter_mm": 0.8,
+            "hole_diameter_mm": 0.6,
             "description": "Negative terminal. Connect to ground."
         }
     ],
     "internal_nets": [],
     "configurable": {
-        "wavelength_nm": {
-            "description": "Wavelength in nm, chosen by agent. Common values: 940 (IR), 620 (red), 590 (yellow), 525 (green), 470 (blue), 400 (UV), or 0 for white",
-            "agent_decides": true
-        },
-        "forward_voltage_v": {
-            "description": "Forward voltage corresponding to chosen wavelength. Agent must set consistently: IR=1.2, Red=2.0, Orange=2.1, Yellow=2.1, Green=2.2, Blue=3.2, White=3.3, UV=3.4",
-            "agent_decides": true
+        "color": {
+            "type": "enum",
+            "description": "LED color",
+            "options": {
+                "ir": {
+                    "wavelength_nm": 940,
+                    "forward_voltage_v": 1.2
+                },
+                "red": {
+                    "wavelength_nm": 620,
+                    "forward_voltage_v": 2.0
+                },
+                "orange": {
+                    "wavelength_nm": 600,
+                    "forward_voltage_v": 2.1
+                },
+                "yellow": {
+                    "wavelength_nm": 590,
+                    "forward_voltage_v": 2.1
+                },
+                "green": {
+                    "wavelength_nm": 525,
+                    "forward_voltage_v": 2.2
+                },
+                "blue": {
+                    "wavelength_nm": 470,
+                    "forward_voltage_v": 3.2
+                },
+                "white": {
+                    "wavelength_nm": 0,
+                    "forward_voltage_v": 3.3
+                },
+                "uv": {
+                    "wavelength_nm": 400,
+                    "forward_voltage_v": 3.4
+                }
+            }
         }
     }
 }

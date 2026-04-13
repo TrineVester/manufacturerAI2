@@ -1035,6 +1035,209 @@ def _route_single_net(
     return (all_paths, True)
 
 
+# ── Elite pool, phase rotation, stall detection, DRC ──────────────
+
+
+@dataclass
+class _EliteEntry:
+    """A stored routing solution in the elite pool."""
+
+    score: int
+    grid_snap: bytearray
+    routed_paths: dict[str, list[list[tuple[int, int]]]]
+    assignments: dict[str, str]
+    failed_nets: list[str]
+    ordering: list[str]
+
+
+def _update_elites(
+    elites: list[_EliteEntry],
+    score: int,
+    grid: RoutingGrid,
+    routed_paths: dict[str, list[list[tuple[int, int]]]],
+    assignments: dict[str, str],
+    failed_nets: set[str],
+    ordering: list[str],
+    pool_size: int,
+) -> None:
+    """Add a solution to the elite pool if it qualifies."""
+    entry = _EliteEntry(
+        score=score,
+        grid_snap=grid.snapshot(),
+        routed_paths={nid: [list(p) for p in paths]
+                      for nid, paths in routed_paths.items()},
+        assignments=dict(assignments),
+        failed_nets=list(failed_nets),
+        ordering=list(ordering),
+    )
+    elites.append(entry)
+    elites.sort(key=lambda e: -e.score)
+    while len(elites) > pool_size:
+        elites.pop()
+
+
+def _pick_phase(
+    attempt: int,
+    stall_count: int,
+    elites: list[_EliteEntry],
+    stall_limit: int,
+) -> str:
+    """Choose routing strategy for this attempt."""
+    if attempt == 0:
+        return 'restart'
+    if stall_count >= stall_limit and elites:
+        return 'explore'
+    cycle = attempt % 4
+    if cycle == 1 and elites:
+        return 'refine'
+    if cycle == 2 and len(elites) >= 2:
+        return 'crossover'
+    if cycle == 3 and elites:
+        return 'explore'
+    return 'restart'
+
+
+def _sync_pools_with_assignments(
+    pools: dict[str, PinPool],
+    assignments: dict[str, str],
+) -> None:
+    """Remove already-assigned pins from pools to prevent double-allocation."""
+    for value in assignments.values():
+        parts = value.split(":", 1)
+        if len(parts) != 2:
+            continue
+        iid, pin_id = parts
+        pool = pools.get(iid)
+        if pool is None:
+            continue
+        for group_pins in pool.pools.values():
+            try:
+                group_pins.remove(pin_id)
+            except ValueError:
+                pass
+
+
+def _clear_failed_assignments(
+    assignments: dict[str, str],
+    failed_nets: set[str],
+) -> None:
+    """Clear pin assignments for failed nets to allow re-allocation."""
+    to_remove = [k for k in assignments if k.split("|", 1)[0] in failed_nets]
+    for k in to_remove:
+        del assignments[k]
+
+
+def _find_clearance_violations(
+    routed_paths: dict[str, list[list[tuple[int, int]]]],
+    clearance_cells: int,
+) -> set[str]:
+    """Find nets whose traces violate clearance distance with another net."""
+    cell_net: dict[tuple[int, int], str] = {}
+    for net_id, paths in routed_paths.items():
+        for path in paths:
+            for cell in path:
+                cell_net[cell] = net_id
+
+    violators: set[str] = set()
+    for (gx, gy), net_id in cell_net.items():
+        if net_id in violators:
+            continue
+        for dx in range(-clearance_cells + 1, clearance_cells):
+            found = False
+            for dy in range(-clearance_cells + 1, clearance_cells):
+                if dx == 0 and dy == 0:
+                    continue
+                other = cell_net.get((gx + dx, gy + dy))
+                if other is not None and other != net_id:
+                    violators.add(net_id)
+                    violators.add(other)
+                    found = True
+                    break
+            if found:
+                break
+    return violators
+
+
+def _drc_repair(
+    routed_paths: dict[str, list[list[tuple[int, int]]]],
+    grid: RoutingGrid,
+    net_pad_map: dict[str, list[_PinRef]],
+    placement: FullPlacement,
+    catalog: CatalogResult,
+    pin_pools: dict[str, PinPool],
+    assignments: dict[str, str],
+    all_pin_cells: dict[str, set[tuple[int, int]]],
+    config: RouterConfig,
+    pad_radius: int,
+) -> set[str]:
+    """Post-routing DRC repair: fix trace clearance violations.
+
+    Iteratively rips up the longest violating trace, adds cost
+    penalties near its old path, and re-routes.  Returns net IDs
+    that failed to re-route.
+    """
+    clearance_cells = max(1, math.ceil(
+        (config.trace_width_mm / 2 + config.trace_clearance_mm)
+        / config.grid_resolution_mm
+    ))
+    foreign_pin_radius = _compute_foreign_pin_radius(config)
+    repair_failed: set[str] = set()
+
+    for round_idx in range(config.drc_repair_rounds):
+        violations = _find_clearance_violations(routed_paths, clearance_cells)
+        if not violations:
+            break
+
+        victim = max(
+            violations,
+            key=lambda nid: sum(len(p) for p in routed_paths.get(nid, [])),
+        )
+        log.info("DRC repair round %d: ripping %s (%d violation nets)",
+                 round_idx + 1, victim, len(violations))
+
+        # Add cost around the victim's current path to encourage detour
+        for path in routed_paths[victim]:
+            for gx, gy in path:
+                idx = gy * grid.width + gx
+                grid._cost_map[idx] = grid._cost_map.get(idx, 0) + 20
+
+        # Rip up the victim
+        for path in routed_paths[victim]:
+            grid.free_trace(path)
+        del routed_paths[victim]
+
+        # Allow pin re-allocation
+        _clear_failed_assignments(assignments, {victim})
+        repair_pools = _copy_pools(pin_pools)
+        _sync_pools_with_assignments(repair_pools, assignments)
+
+        refs = net_pad_map[victim]
+        pads = _resolve_pads(
+            refs, victim, placement, catalog,
+            repair_pools, grid, assignments,
+        )
+        if pads is None or len(pads) < 2:
+            repair_failed.add(victim)
+            continue
+
+        paths, ok = _route_single_net(
+            victim, pads, grid, pad_radius, config.turn_penalty,
+            all_pin_cells=all_pin_cells, foreign_pin_radius=foreign_pin_radius,
+        )
+        if ok and paths:
+            routed_paths[victim] = paths
+            for p in paths:
+                grid.block_trace(p)
+            log.info("DRC repair round %d: %s re-routed OK",
+                     round_idx + 1, victim)
+        else:
+            repair_failed.add(victim)
+            log.warning("DRC repair round %d: %s FAILED to re-route",
+                        round_idx + 1, victim)
+
+    return repair_failed
+
+
 # ── Routing orchestrator with rip-up ──────────────────────────────
 
 
@@ -1098,6 +1301,11 @@ def _route_with_ripup(
     dead_prefixes: list[tuple[str, ...]] = []
     pruned_count = 0  # how many orderings were skipped by pruning
 
+    # ── Elite pool & stall detection ────────────────────────────
+    elites: list[_EliteEntry] = []
+    best_score = 0
+    stall_count = 0
+
     def _starts_with_dead_prefix(ordering: list[str]) -> bool:
         """Return True if *ordering* starts with any known-dead prefix."""
         t = tuple(ordering)
@@ -1112,77 +1320,124 @@ def _route_with_ripup(
                      "(%d pruned)", attempt, pruned_count)
             break
 
-        # First attempt uses the priority-sorted order;
-        # subsequent attempts use random shuffles, skipping any
-        # ordering that starts with a known-dead prefix.
-        if attempt == 0:
-            order = list(base_order)
-        else:
-            order = list(base_order)
-            random.shuffle(order)
-            # Re-shuffle if the ordering starts with a dead prefix
-            for _reshuffle in range(100):
-                if not _starts_with_dead_prefix(order):
-                    break
-                random.shuffle(order)
-                pruned_count += 1
-            else:
-                # Exhausted reshuffles — all orderings appear pruned.
-                # The search space is saturated; stop early.
-                log.info("Router: search space exhausted after %d attempts "
-                         "(%d pruned, %d dead prefixes)",
-                         attempt, pruned_count, len(dead_prefixes))
-                break
+        phase = _pick_phase(attempt, stall_count, elites, config.stall_limit)
+        log.debug("Router attempt %d: phase=%s stall=%d elites=%d",
+                  attempt + 1, phase, stall_count, len(elites))
 
-        # Fresh pin pools for this attempt (deep copy)
-        attempt_pools = _copy_pools(pin_pools)
-        attempt_assignments: dict[str, str] = {}
-
-        # Fresh grid (restore to base state)
-        grid = base_grid.clone()
-
-        # ── Phase 1: Route all nets in order ───────────────────────
+        # ── Initialize grid state based on phase ─────────────────
         routed_paths: dict[str, list[list[tuple[int, int]]]] = {}
         failed_set: set[str] = set()
+        skip_phase1 = False
 
-        for nid in order:
-            refs = net_pad_map[nid]
-            pads = _resolve_pads(
-                refs, nid, placement, catalog,
-                attempt_pools, grid, attempt_assignments,
-            )
-            if pads is None or len(pads) < 2:
-                log.debug("  [P1] %-20s FAIL — pad resolution failed", nid)
-                failed_set.add(nid)
-                continue
-
-            log.debug("  [P1] %-20s routing %d pads: %s", nid, len(pads),
-                      ", ".join(f"{p.instance_id}:{p.pin_id}@({p.world_x:.1f},{p.world_y:.1f})" for p in pads))
-
-            paths, ok = _route_single_net(
-                nid, pads, grid, pad_radius, config.turn_penalty,
-                all_pin_cells=all_pin_cells, foreign_pin_radius=foreign_pin_radius,
-            )
-            if ok and paths:
-                total_cells = sum(len(p) for p in paths)
-                routed_paths[nid] = paths
-                # Block trace cells
-                for path in paths:
-                    grid.block_trace(path)
-                log.debug("  [P1] %-20s OK — %d segments, %d cells", nid, len(paths), total_cells)
+        if phase in ('refine', 'crossover'):
+            # Restore from an elite solution
+            if phase == 'refine':
+                donor = elites[0]  # best
             else:
-                failed_set.add(nid)
-                stats = _grid_stats(grid)
-                log.info("  [P1] %-20s FAIL — no route (grid %.1f%% free, "
-                         "%d trace cells, %d blocked)",
-                         nid, stats['free_pct'],
-                         stats['trace_path'], stats['blocked'])
+                donor = random.choice(elites[1:]) if len(elites) > 1 else elites[0]
+
+            grid = base_grid.clone()
+            grid.restore(donor.grid_snap)
+            routed_paths = {nid: [list(p) for p in paths]
+                           for nid, paths in donor.routed_paths.items()}
+            attempt_assignments = dict(donor.assignments)
+            attempt_pools = _copy_pools(pin_pools)
+            _sync_pools_with_assignments(attempt_pools, attempt_assignments)
+            failed_set = set(donor.failed_nets)
+            order = list(donor.ordering)
+
+            if phase == 'refine':
+                # Rip up worst nets (longest traces) to create room
+                candidates = sorted(
+                    routed_paths,
+                    key=lambda nid: sum(len(p) for p in routed_paths[nid]),
+                    reverse=True,
+                )
+                n_rip = min(3, max(1, len(candidates) // 3))
+                for nid in candidates[:n_rip]:
+                    for path in routed_paths[nid]:
+                        grid.free_trace(path)
+                    del routed_paths[nid]
+                    failed_set.add(nid)
+
+            # Pin re-allocation for failed nets
+            _clear_failed_assignments(attempt_assignments, failed_set)
+            skip_phase1 = True
+
+        else:
+            # Fresh start (restart / explore)
+            if phase == 'explore' and elites:
+                order = list(elites[0].ordering)
+                n_swaps = random.randint(2, min(4, max(2, len(order) // 2)))
+                for _ in range(n_swaps):
+                    i = random.randint(0, len(order) - 2)
+                    order[i], order[i + 1] = order[i + 1], order[i]
+            elif attempt == 0:
+                order = list(base_order)
+            else:
+                order = list(base_order)
+                random.shuffle(order)
+                # Re-shuffle if the ordering starts with a dead prefix
+                for _reshuffle in range(100):
+                    if not _starts_with_dead_prefix(order):
+                        break
+                    random.shuffle(order)
+                    pruned_count += 1
+                else:
+                    # Exhausted reshuffles — all orderings appear pruned.
+                    # The search space is saturated; stop early.
+                    log.info("Router: search space exhausted after %d attempts "
+                             "(%d pruned, %d dead prefixes)",
+                             attempt, pruned_count, len(dead_prefixes))
+                    break
+
+            # Fresh pin pools for this attempt (deep copy)
+            attempt_pools = _copy_pools(pin_pools)
+            attempt_assignments: dict[str, str] = {}
+
+            # Fresh grid (restore to base state)
+            grid = base_grid.clone()
+
+        # ── Phase 1: Route all nets in order ───────────────────────
+        if not skip_phase1:
+            for nid in order:
+                refs = net_pad_map[nid]
+                pads = _resolve_pads(
+                    refs, nid, placement, catalog,
+                    attempt_pools, grid, attempt_assignments,
+                )
+                if pads is None or len(pads) < 2:
+                    log.debug("  [P1] %-20s FAIL — pad resolution failed", nid)
+                    failed_set.add(nid)
+                    continue
+
+                log.debug("  [P1] %-20s routing %d pads: %s", nid, len(pads),
+                          ", ".join(f"{p.instance_id}:{p.pin_id}@({p.world_x:.1f},{p.world_y:.1f})" for p in pads))
+
+                paths, ok = _route_single_net(
+                    nid, pads, grid, pad_radius, config.turn_penalty,
+                    all_pin_cells=all_pin_cells, foreign_pin_radius=foreign_pin_radius,
+                )
+                if ok and paths:
+                    total_cells = sum(len(p) for p in paths)
+                    routed_paths[nid] = paths
+                    # Block trace cells
+                    for path in paths:
+                        grid.block_trace(path)
+                    log.debug("  [P1] %-20s OK — %d segments, %d cells", nid, len(paths), total_cells)
+                else:
+                    failed_set.add(nid)
+                    stats = _grid_stats(grid)
+                    log.info("  [P1] %-20s FAIL — no route (grid %.1f%% free, "
+                             "%d trace cells, %d blocked)",
+                             nid, stats['free_pct'],
+                             stats['trace_path'], stats['blocked'])
 
         phase1_stats = _grid_stats(grid)
-        log.info("Router attempt %d: %d/%d nets routed (phase 1), "
+        log.info("Router attempt %d: %d/%d nets routed (%s), "
                  "grid %.1f%% free",
                  attempt + 1, len(order) - len(failed_set), len(order),
-                 phase1_stats['free_pct'])
+                 phase, phase1_stats['free_pct'])
         if failed_set:
             log.info("  Phase 1 failed nets: %s", sorted(failed_set))
 
@@ -1201,7 +1456,9 @@ def _route_with_ripup(
                 )
 
         # ── Phase 2: Inner rip-up loop ─────────────────────────────
-        for inner_iter in range(config.inner_rip_up_limit):
+        # Dynamic limit: try 3× harder when stalled
+        effective_inner = config.inner_rip_up_limit * (3 if stall_count >= config.stall_limit else 1)
+        for inner_iter in range(effective_inner):
             if not failed_set or not _time_left():
                 break
 
@@ -1405,10 +1662,25 @@ def _route_with_ripup(
             failed_set.update(stripped)
 
         # Check if this attempt is best so far
+        score = len(net_ids) - len(failed_set)
         if len(failed_set) < len(best_failed):
             best_traces = _grid_paths_to_traces(routed_paths, grid)
             best_assignments = dict(attempt_assignments)
             best_failed = list(failed_set)
+
+        # ── Update elite pool ──────────────────────────────────
+        _update_elites(
+            elites, score, grid, routed_paths,
+            attempt_assignments, failed_set, order,
+            config.elite_pool_size,
+        )
+
+        # ── Stall detection ────────────────────────────────────
+        if score > best_score:
+            best_score = score
+            stall_count = 0
+        else:
+            stall_count += 1
 
         if not failed_set:
             log.info("Router: all nets routed on attempt %d "
@@ -1419,25 +1691,41 @@ def _route_with_ripup(
                 failed_nets=[],
             )
 
-        # ── Record dead prefix for search-space pruning ────────
-        # The prefix is the ordered subsequence of `order` that
-        # was successfully routed.  Any future ordering starting
-        # with this same prefix produces an identical grid state,
-        # so the same nets will fail again.
-        routed_prefix = tuple(nid for nid in order if nid not in failed_set)
-        if len(routed_prefix) >= 1:
-            # Only record if we haven't already got a shorter prefix
-            # that subsumes this one (a shorter prefix prunes more).
-            already_covered = False
-            for pfx in dead_prefixes:
-                if (len(pfx) <= len(routed_prefix)
-                        and routed_prefix[: len(pfx)] == pfx):
-                    already_covered = True
-                    break
-            if not already_covered:
-                dead_prefixes.append(routed_prefix)
-                log.debug("Router: recorded dead prefix len=%d: %s",
-                          len(routed_prefix), routed_prefix)
+        # ── Record dead prefix (restart/explore only) ──────────
+        if phase in ('restart', 'explore'):
+            routed_prefix = tuple(nid for nid in order if nid not in failed_set)
+            if len(routed_prefix) >= 1:
+                already_covered = False
+                for pfx in dead_prefixes:
+                    if (len(pfx) <= len(routed_prefix)
+                            and routed_prefix[: len(pfx)] == pfx):
+                        already_covered = True
+                        break
+                if not already_covered:
+                    dead_prefixes.append(routed_prefix)
+                    log.debug("Router: recorded dead prefix len=%d: %s",
+                              len(routed_prefix), routed_prefix)
+
+    # ── DRC repair on best result ─────────────────────────────────
+    if elites and _time_left():
+        best_elite = elites[0]
+        drc_grid = base_grid.clone()
+        drc_grid.restore(best_elite.grid_snap)
+        drc_paths = {nid: [list(p) for p in paths]
+                     for nid, paths in best_elite.routed_paths.items()}
+        drc_assignments = dict(best_elite.assignments)
+
+        drc_failed = _drc_repair(
+            drc_paths, drc_grid, net_pad_map,
+            placement, catalog, pin_pools, drc_assignments,
+            all_pin_cells, config, pad_radius,
+        )
+        # Accept the DRC result if it didn't make things worse
+        total_failed_after = set(best_elite.failed_nets) | drc_failed
+        if len(total_failed_after) <= len(best_failed):
+            best_traces = _grid_paths_to_traces(drc_paths, drc_grid)
+            best_assignments = drc_assignments
+            best_failed = list(total_failed_after)
 
     elapsed = time.monotonic() - start_time
     log.info("Router: finished in %.1fs with %d/%d nets routed, %d failed",

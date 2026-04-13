@@ -5,9 +5,11 @@ import { onSessionCreated, setSessionLabel } from './session.js';
 import { setData as setViewportData, clearData as clearViewportData } from './viewport.js';
 import { enablePlacementTab, resetPlacementPanel } from './placement.js';
 import { resetRoutingPanel } from './routing.js';
+import { getSelectedModel } from './theme.js';
 
 const messagesDiv = () => document.getElementById('chat-messages');
 const statusSpan = () => document.getElementById('design-status');
+let _isSending = false;  // Guard against double-submit
 
 // ── Load conversation history ─────────────────────────────────────
 
@@ -144,7 +146,9 @@ async function loadDesignResult() {
 export async function sendDesignPrompt() {
     const input = document.getElementById('chat-input');
     const prompt = input.value.trim();
-    if (!prompt) return;
+    if (!prompt || _isSending) return;
+
+    _isSending = true;
 
     // Show user message and clear input
     appendMessage('user', prompt);
@@ -163,7 +167,7 @@ export async function sendDesignPrompt() {
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ prompt }),
+            body: JSON.stringify({ prompt, model: getSelectedModel() }),
         });
 
         if (!response.ok) {
@@ -176,6 +180,7 @@ export async function sendDesignPrompt() {
     } catch (e) {
         appendMessage('error', `Connection error: ${e.message}`);
     } finally {
+        _isSending = false;
         input.disabled = false;
         document.getElementById('btn-send-design').disabled = false;
         statusSpan().textContent = '';
@@ -477,30 +482,87 @@ function scrollToBottom() {
 // ── Markdown renderer (lightweight, XSS-safe) ─────────────────────
 
 /**
- * Convert a small subset of Markdown to safe HTML.
- * Handles: **bold**, *italic*, `code`, - lists, blank line breaks.
+ * Convert a subset of Markdown to safe HTML.
+ * Handles: headings, **bold**, *italic*, `code`, ```code blocks```,
+ * - unordered lists, 1. ordered lists, blank line breaks.
  */
 function renderMarkdown(text) {
     const lines = text.split('\n');
     const out = [];
-    let inList = false;
+    let inUl = false;
+    let inOl = false;
+    let inCode = false;
+    let codeLang = '';
+    let codeLines = [];
 
-    const closeList = () => { if (inList) { out.push('</ul>'); inList = false; } };
+    const closeUl = () => { if (inUl) { out.push('</ul>'); inUl = false; } };
+    const closeOl = () => { if (inOl) { out.push('</ol>'); inOl = false; } };
+    const closeLists = () => { closeUl(); closeOl(); };
 
     for (const line of lines) {
-        if (/^[-*] /.test(line)) {
-            if (!inList) { out.push('<ul>'); inList = true; }
-            out.push(`<li>${inlineMarkdown(line.slice(2))}</li>`);
-        } else {
-            closeList();
-            if (line.trim() === '') {
-                out.push('<br>');
+        // Fenced code blocks
+        if (/^```/.test(line)) {
+            if (inCode) {
+                // Close code block
+                out.push(`<pre class="md-code-block"><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+                inCode = false;
+                codeLines = [];
+                codeLang = '';
             } else {
-                out.push(`<p>${inlineMarkdown(line)}</p>`);
+                closeLists();
+                inCode = true;
+                codeLang = line.slice(3).trim();
+                codeLines = [];
             }
+            continue;
+        }
+        if (inCode) {
+            codeLines.push(line);
+            continue;
+        }
+
+        // Headings
+        const headingMatch = line.match(/^(#{1,4})\s+(.+)/);
+        if (headingMatch) {
+            closeLists();
+            const level = headingMatch[1].length;
+            // Render as h4-h6 to stay smaller than panel headings
+            const tag = `h${Math.min(level + 3, 6)}`;
+            out.push(`<${tag} class="md-heading">${inlineMarkdown(headingMatch[2])}</${tag}>`);
+            continue;
+        }
+
+        // Unordered list
+        if (/^[-*] /.test(line)) {
+            closeOl();
+            if (!inUl) { out.push('<ul>'); inUl = true; }
+            out.push(`<li>${inlineMarkdown(line.slice(2))}</li>`);
+            continue;
+        }
+
+        // Ordered list
+        const olMatch = line.match(/^(\d+)[.)]\s+(.+)/);
+        if (olMatch) {
+            closeUl();
+            if (!inOl) { out.push('<ol>'); inOl = true; }
+            out.push(`<li>${inlineMarkdown(olMatch[2])}</li>`);
+            continue;
+        }
+
+        // Default: paragraph or blank line
+        closeLists();
+        if (line.trim() === '') {
+            out.push('<br>');
+        } else {
+            out.push(`<p>${inlineMarkdown(line)}</p>`);
         }
     }
-    closeList();
+
+    // Close any open blocks
+    if (inCode && codeLines.length) {
+        out.push(`<pre class="md-code-block"><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+    }
+    closeLists();
     return out.join('');
 }
 

@@ -1,14 +1,21 @@
 {
     "id": "battery_holder_2xAAA",
     "name": "2xAAA Battery Holder",
-    "description": "Holds two AAA batteries in series, providing 3.0V nominal (2x 1.5V). Spring contacts and snap-fit lid. Requires bottom access for battery replacement. Heavy component — placer should position near bottom of device for balance.",
-
+    "description": "Printed cavity holding two AAA batteries (10.5mm Ø × 44.5mm) side by side in series, providing 3.0V nominal. Three flat metal contact plates with springs/dome contacts are inserted into channels in the end walls during the pause. Pin side (+Y) has two small plates (V+ and GND), connector side (-Y) has one wide plate bridging the cells in series.",
     "ui_placement": false,
     "body": {
         "shape": "rect",
-        "width_mm": 25.0,
+        "width_mm": 23.0,
         "length_mm": 48.0,
-        "height_mm": 12.0
+        "height_mm": 12.5,
+        "channels": {
+            "axis": "y",
+            "count": 2,
+            "diameter_mm": 11.0,
+            "spacing_mm": 12.0,
+            "length_mm": 48.0,
+            "center_z_mm": 5.0
+        }
     },
     "mounting": {
         "style": "bottom",
@@ -17,39 +24,194 @@
         ],
         "blocks_routing": true,
         "keepout_margin_mm": 2.0,
-        "hatch": {
-            "enabled": true,
-            "clearance_mm": 0.3,
-            "thickness_mm": 1.5
-        }
+        "extras": [
+            {
+                "label": "battery hatch",
+                "shape": "hatch",
+                "width_mm": 25.4,
+                "length_mm": 45.9,
+                "thickness_mm": 1.5
+            }
+        ]
     },
+    "pin_length_mm": 7.5,
     "pins": [
         {
             "id": "V+",
-            "label": "Positive (3V)",
-            "position_mm": [
-                0,
-                24.0
-            ],
+            "label": "Positive tab (3V)",
+            "position_mm": [6.75, 26.0],
             "direction": "out",
             "voltage_v": 3.0,
             "current_max_ma": 1000,
-            "hole_diameter_mm": 1.2,
-            "description": "Positive terminal. Outputs ~3V from 2x AAA in series."
+            "hole_diameter_mm": 3.0,
+            "shape": {
+                "type": "rect",
+                "width_mm": 4.0,
+                "length_mm": 1.0
+            },
+            "description": "Positive tab from small plate, reaching ink traces through floor."
         },
         {
             "id": "GND",
-            "label": "Ground (-)",
-            "position_mm": [
-                0,
-                -24.0
-            ],
+            "label": "Ground tab (-)",
+            "position_mm": [-6.75, 26.0],
             "direction": "out",
             "voltage_v": 0,
             "current_max_ma": 1000,
-            "hole_diameter_mm": 1.2,
-            "description": "Negative terminal (ground)."
+            "hole_diameter_mm": 3.0,
+            "shape": {
+                "type": "rect",
+                "width_mm": 4.0,
+                "length_mm": 1.0
+            },
+            "description": "Negative tab from small plate, reaching ink traces through floor."
         }
     ],
-    "internal_nets": []
+    "internal_nets": [],
+    "scad": {
+        "features": [
+            {
+                "shape": "rect",
+                "label": "positive plate channel",
+                "position_mm": [6.75, 26.0],
+                "width_mm": 12.5,
+                "length_mm": 1.5,
+                "depth_mm": 12.5,
+                "z_anchor": "cavity_start",
+                "description": "Slot in +Y wall for V+ contact plate, 1mm wall separates from GND."
+            },
+            {
+                "shape": "rect",
+                "label": "negative plate channel",
+                "position_mm": [-6.75, 26.0],
+                "width_mm": 12.5,
+                "length_mm": 1.5,
+                "depth_mm": 12.5,
+                "z_anchor": "cavity_start",
+                "description": "Slot in +Y wall for GND contact plate, 1mm wall separates from V+."
+            },
+            {
+                "shape": "rect",
+                "label": "inter-cell plate channel",
+                "position_mm": [0, -26.0],
+                "width_mm": 27.5,
+                "length_mm": 1.5,
+                "depth_mm": 12.5,
+                "z_anchor": "cavity_start",
+                "description": "Slot in -Y wall for wide bridging plate (full body height, open at pause for insertion)."
+            },
+            {
+                "shape": "rect",
+                "label": "V+ dome window",
+                "position_mm": [6.75, 23.25],
+                "width_mm": 5.0,
+                "length_mm": 4.0,
+                "depth_mm": 12.5,
+                "z_anchor": "cavity_start",
+                "description": "Opening for dome contact on V+ plate to reach battery, starts at plate inner face."
+            },
+            {
+                "shape": "rect",
+                "label": "GND spring insertion slot",
+                "position_mm": [-6.75, 19.0],
+                "width_mm": 10.0,
+                "length_mm": 20.0,
+                "depth_mm": 12.5,
+                "z_anchor": "cavity_start",
+                "description": "Open-top slot from channel center through roof at GND spring to allow insertion."
+            },
+            {
+                "shape": "rect",
+                "label": "bridging spring insertion slot",
+                "position_mm": [6.75, -19.0],
+                "width_mm": 10.0,
+                "length_mm": 20.0,
+                "depth_mm": 12.5,
+                "z_anchor": "cavity_start",
+                "description": "Open-top slot from channel center through roof at bridging plate spring to allow insertion."
+            },
+            {
+                "shape": "rect",
+                "label": "inter-cell dome window",
+                "position_mm": [-6.75, -23.25],
+                "width_mm": 5.0,
+                "length_mm": 4.0,
+                "depth_mm": 12.5,
+                "z_anchor": "cavity_start",
+                "description": "Opening for dome contact on inter-cell bridging plate to reach battery, starts at plate inner face."
+            },
+            {
+                "shape": "rect",
+                "label": "V+ pin passthrough",
+                "position_mm": [6.75, 26.0],
+                "width_mm": 3.0,
+                "length_mm": 0.3,
+                "through_surface": true,
+                "z_anchor": "floor",
+                "description": "Floor slot for V+ tab to reach ink traces."
+            },
+            {
+                "shape": "rect",
+                "label": "GND pin passthrough",
+                "position_mm": [-6.75, 26.0],
+                "width_mm": 3.0,
+                "length_mm": 0.3,
+                "through_surface": true,
+                "z_anchor": "floor",
+                "description": "Floor slot for GND tab to reach ink traces."
+            },
+            {
+                "shape": "rect",
+                "label": "hatch floor opening",
+                "position_mm": [0, 0],
+                "width_mm": 23.0,
+                "length_mm": 47.4,
+                "depth_mm": 4.0,
+                "z_anchor": "ground",
+                "description": "Through-hole for battery access (narrower than hatch, panel rests on ledges)."
+            },
+            {
+                "shape": "rect",
+                "label": "hatch ledge left",
+                "position_mm": [-12.25, 0],
+                "width_mm": 1.5,
+                "length_mm": 47.4,
+                "depth_mm": 1.8,
+                "z_anchor": "ground",
+                "description": "Left shelf for hatch panel (depth = 1.5mm panel + 0.3mm clearance)."
+            },
+            {
+                "shape": "rect",
+                "label": "hatch ledge right",
+                "position_mm": [12.25, 0],
+                "width_mm": 1.5,
+                "length_mm": 47.4,
+                "depth_mm": 1.8,
+                "z_anchor": "ground",
+                "description": "Right shelf for hatch panel (depth = 1.5mm panel + 0.3mm clearance)."
+            },
+            {
+                "shape": "rect",
+                "label": "hatch tab catch near",
+                "position_mm": [0, -24.3],
+                "width_mm": 4.4,
+                "length_mm": 2.0,
+                "depth_mm": 1.5,
+                "z_anchor": "ground",
+                "z_center_mm": 1.5,
+                "description": "Wide recess for spring hook snap-fit in -Y wall."
+            },
+            {
+                "shape": "rect",
+                "label": "hatch tab catch far",
+                "position_mm": [0, 24.3],
+                "width_mm": 4.4,
+                "length_mm": 2.0,
+                "depth_mm": 1.5,
+                "z_anchor": "ground",
+                "z_center_mm": 1.5,
+                "description": "Wide recess for ledge tab in +Y wall."
+            }
+        ]
+    }
 }

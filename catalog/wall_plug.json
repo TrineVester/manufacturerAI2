@@ -1,0 +1,111 @@
+{
+    "id": "wall_plug",
+    "name": "Wall Plug Connector",
+    "description": "PCB-mount AC wall plug connector. Body is 26.3×3.6×5.4mm. Two 4.5mm-diameter prongs (32mm long, 20mm center-to-center) extend from the front face for plugging into a wall outlet. On the back, leads extend 7mm horizontally from the connecting bar, then bend downward into pins that descend 5.5mm for through-hole mounting. Mounts through the enclosure side wall so the prongs protrude outside the device. Cutout matches the full body cross-section.",
+    "ui_placement": true,
+    "body": {
+        "shape": "rect",
+        "width_mm": 26.3,
+        "length_mm": 3.6,
+        "height_mm": 5.4
+    },
+    "mounting": {
+        "style": "side",
+        "allowed_styles": [
+            "side"
+        ],
+        "blocks_routing": false,
+        "keepout_margin_mm": 2.0
+    },
+    "pin_length_mm": 5.5,
+    "pins": [
+        {
+            "id": "L",
+            "label": "Live",
+            "position_mm": [
+                -10,
+                -11.8
+            ],
+            "direction": "in",
+            "voltage_v": null,
+            "current_max_ma": 10000,
+            "hole_diameter_mm": 1.0,
+            "description": "Live AC terminal. Lead extends from connecting bar then bends down into a through-hole pin.",
+            "shape": {
+                "type": "circle"
+            }
+        },
+        {
+            "id": "N",
+            "label": "Neutral",
+            "position_mm": [
+                10,
+                -11.8
+            ],
+            "direction": "in",
+            "voltage_v": null,
+            "current_max_ma": 10000,
+            "hole_diameter_mm": 1.0,
+            "description": "Neutral AC terminal. Lead extends from connecting bar then bends down into a through-hole pin.",
+            "shape": {
+                "type": "circle"
+            }
+        }
+    ],
+    "internal_nets": [],
+    "configurable": {},
+    "scad": {
+        "features": [
+            {
+                "shape": "rect",
+                "label": "Prong (Live)",
+                "position_mm": [-10, 10],
+                "width_mm": 4.5,
+                "length_mm": 32.0,
+                "depth_mm": 6.0,
+                "z_anchor": "cavity_start",
+                "description": "Live prong extending forward from the body front face. 4.5mm diameter, 32mm long, horizontal."
+            },
+            {
+                "shape": "rect",
+                "label": "Prong (Neutral)",
+                "position_mm": [10, 10],
+                "width_mm": 4.5,
+                "length_mm": 32.0,
+                "depth_mm": 6.0,
+                "z_anchor": "cavity_start",
+                "description": "Neutral prong extending forward from the body front face. 4.5mm diameter, 32mm long, horizontal."
+            },
+            {
+                "shape": "rect",
+                "label": "Prong connecting bar",
+                "position_mm": [0, -5.8],
+                "width_mm": 26.3,
+                "length_mm": 4.5,
+                "depth_mm": 6.0,
+                "z_anchor": "cavity_start",
+                "description": "Horizontal crossbar of H-shaped cutout. Connects the two prong lead paths at the back of the body."
+            },
+            {
+                "shape": "rect",
+                "label": "Lead channel (Live)",
+                "position_mm": [-10, -9.3],
+                "width_mm": 4.5,
+                "length_mm": 5.0,
+                "depth_mm": 4.0,
+                "z_anchor": "cavity_start",
+                "description": "Left leg of H-shaped cutout. Clearance for the Live lead from connecting bar to pin drop point."
+            },
+            {
+                "shape": "rect",
+                "label": "Lead channel (Neutral)",
+                "position_mm": [10, -9.3],
+                "width_mm": 4.5,
+                "length_mm": 5.0,
+                "depth_mm": 4.0,
+                "z_anchor": "cavity_start",
+                "description": "Right leg of H-shaped cutout. Clearance for the Neutral lead from connecting bar to pin drop point."
+            }
+        ]
+    }
+}

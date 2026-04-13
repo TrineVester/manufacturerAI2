@@ -1,0 +1,63 @@
+{
+    "id": "motor_fan_3v",
+    "name": "3V DC Motor with Fan",
+    "description": "Small brushed DC motor with attached fan blade. Runs at approximately 3V and draws 300mA. The motor is a vertical cylinder with a flat fan disc mounted at the top. Non-polarized: applying V+ to Lead 1 and GND to Lead 2 spins clockwise (blows air down); reversing polarity spins counter-clockwise (pulls air up).",
+    "ui_placement": true,
+    "body": {
+        "shape": "circle",
+        "diameter_mm": 7.2,
+        "height_mm": 28.5
+    },
+    "mounting": {
+        "style": "top",
+        "allowed_styles": [
+            "top"
+        ],
+        "blocks_routing": false,
+        "keepout_margin_mm": 2.0
+    },
+    "pin_length_mm": 3.7,
+    "pins": [
+        {
+            "id": "1",
+            "label": "Lead 1",
+            "position_mm": [
+                -2.25,
+                0
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 300,
+            "hole_diameter_mm": 0.6,
+            "description": "Motor lead. V+ here and GND on Lead 2 → clockwise (air up). Reverse for counter-clockwise."
+        },
+        {
+            "id": "2",
+            "label": "Lead 2",
+            "position_mm": [
+                2.25,
+                0
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 300,
+            "hole_diameter_mm": 0.6,
+            "description": "Motor lead. V+ here and GND on Lead 1 → counter-clockwise (air down). Reverse for clockwise."
+        }
+    ],
+    "internal_nets": [],
+    "configurable": {},
+    "scad": {
+        "features": [
+            {
+                "shape": "circle",
+                "label": "fan cutout",
+                "position_mm": [0, 0],
+                "diameter_mm": 50.0,
+                "depth_mm": 2.5,
+                "z_anchor": "top",
+                "description": "Clearance disc for fan blades extending from the top of the motor shaft."
+            }
+        ]
+    }
+}

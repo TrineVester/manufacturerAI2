@@ -10,6 +10,26 @@ import { enableGuideBtn, closeGuide } from './guide.js';
 import { resetRoutingPanel, loadRoutingResult } from './routing.js';
 import { resetScadPanel, loadScadResult } from './scad.js';
 
+/**
+ * Fetch current session metadata from the server and update local version.
+ * Call this after any pipeline stage completes to keep the client in sync.
+ * Returns the session data or null on failure.
+ */
+export async function refreshSession() {
+    if (!state.session) return null;
+    try {
+        const res = await fetch(
+            `${API}/api/session?session=${encodeURIComponent(state.session)}`
+        );
+        if (!res.ok) return null;
+        const data = await res.json();
+        state.sessionVersion = data.version || 0;
+        return data;
+    } catch {
+        return null;
+    }
+}
+
 export function setSessionLabel(id, name) {
     const label = document.getElementById('session-label');
     if (!id) {

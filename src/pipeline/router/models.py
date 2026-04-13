@@ -59,6 +59,9 @@ class RouterConfig:
     max_rip_up_attempts: int = 200       # outer random-ordering attempts (pruning skips dead orderings)
     inner_rip_up_limit: int = 100        # inner rip-up iterations per attempt
     time_budget_s: float = 60.0          # maximum wall-clock time for routing
+    elite_pool_size: int = 5             # best solutions retained for crossover/refine
+    stall_limit: int = 15               # attempts without improvement before escalation
+    drc_repair_rounds: int = 5           # post-routing clearance repair iterations
 
 
 # Module-level defaults (used when no RouterConfig is passed)

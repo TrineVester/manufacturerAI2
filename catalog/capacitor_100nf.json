@@ -5,9 +5,9 @@
     "ui_placement": false,
     "body": {
         "shape": "rect",
-        "width_mm": 5.0,
+        "width_mm": 6,
         "length_mm": 2.5,
-        "height_mm": 3.0
+        "height_mm": 6
     },
     "mounting": {
         "style": "internal",
@@ -17,32 +17,33 @@
         "blocks_routing": false,
         "keepout_margin_mm": 1.0
     },
+    "pin_length_mm": 5,
     "pins": [
         {
             "id": "1",
             "label": "Lead 1",
             "position_mm": [
-                -2.5,
+                -3,
                 0
             ],
             "direction": "bidirectional",
             "voltage_v": null,
             "current_max_ma": 500,
-            "hole_diameter_mm": 0.8,
-            "description": "Non-polarized. Connect to VCC."
+            "hole_diameter_mm": 0.7,
+            "description": "Non-polarized."
         },
         {
             "id": "2",
             "label": "Lead 2",
             "position_mm": [
-                2.5,
+                3,
                 0
             ],
             "direction": "bidirectional",
             "voltage_v": null,
             "current_max_ma": 500,
-            "hole_diameter_mm": 0.8,
-            "description": "Non-polarized. Connect to GND."
+            "hole_diameter_mm": 0.7,
+            "description": "Non-polarized."
         }
     ],
     "internal_nets": []

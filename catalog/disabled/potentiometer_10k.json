@@ -15,12 +15,7 @@
             "top"
         ],
         "blocks_routing": true,
-        "keepout_margin_mm": 2.0,
-        "shaft": {
-            "diameter_mm": 6.0,
-            "height_mm": 15.0,
-            "hole_clearance_mm": 0.5
-        }
+        "keepout_margin_mm": 2.0
     },
     "pins": [
         {
@@ -28,7 +23,7 @@
             "label": "End 1",
             "position_mm": [
                 -2.5,
-                -5.0
+                5.0
             ],
             "direction": "bidirectional",
             "voltage_v": null,
@@ -41,7 +36,7 @@
             "label": "Wiper",
             "position_mm": [
                 0,
-                -5.0
+                5.0
             ],
             "direction": "bidirectional",
             "voltage_v": null,
@@ -54,7 +49,7 @@
             "label": "End 2",
             "position_mm": [
                 2.5,
-                -5.0
+                5.0
             ],
             "direction": "bidirectional",
             "voltage_v": null,
@@ -63,5 +58,17 @@
             "description": "Fixed terminal 2. Use as other end of the voltage divider (e.g., connect to GND)."
         }
     ],
-    "internal_nets": []
+    "internal_nets": [],
+    "scad": {
+        "features": [
+            {
+                "shape": "circle",
+                "label": "shaft hole",
+                "position_mm": [0, 0],
+                "diameter_mm": 7.0,
+                "z_anchor": "ceil_start",
+                "through_surface": true
+            }
+        ]
+    }
 }

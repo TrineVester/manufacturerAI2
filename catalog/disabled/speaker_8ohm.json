@@ -16,13 +16,7 @@
             "top"
         ],
         "blocks_routing": true,
-        "keepout_margin_mm": 1.5,
-        "sound_holes": {
-            "enabled": true,
-            "pattern": "grid",
-            "hole_diameter_mm": 1.5,
-            "hole_spacing_mm": 3.0
-        }
+        "keepout_margin_mm": 1.5
     },
     "pins": [
         {
@@ -52,5 +46,22 @@
             "description": "Negative terminal. Connect to ground."
         }
     ],
-    "internal_nets": []
+    "internal_nets": [],
+    "scad": {
+        "features": [
+            {
+                "shape": "circle",
+                "label": "sound hole",
+                "position_mm": [0, 0],
+                "diameter_mm": 1.5,
+                "z_anchor": "ceil_start",
+                "through_surface": true,
+                "pattern": {
+                    "type": "grid",
+                    "spacing_mm": 3.0,
+                    "clip_to_body": true
+                }
+            }
+        ]
+    }
 }

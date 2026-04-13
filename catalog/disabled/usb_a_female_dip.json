@@ -12,8 +12,7 @@
     "mounting": {
         "style": "side",
         "allowed_styles": [
-            "side",
-            "top"
+            "side"
         ],
         "blocks_routing": true,
         "keepout_margin_mm": 2.0
@@ -22,10 +21,7 @@
         {
             "id": "VBUS",
             "label": "VBUS (+5V)",
-            "position_mm": [
-                -3.5,
-                -6.5
-            ],
+            "position_mm": [-3.5, 6.5],
             "direction": "out",
             "voltage_v": 5.0,
             "current_max_ma": 500,
@@ -35,10 +31,7 @@
         {
             "id": "D-",
             "label": "Data -",
-            "position_mm": [
-                -1.0,
-                -6.5
-            ],
+            "position_mm": [-1.0, 6.5],
             "direction": "bidirectional",
             "voltage_v": null,
             "current_max_ma": 10,
@@ -48,10 +41,7 @@
         {
             "id": "D+",
             "label": "Data +",
-            "position_mm": [
-                1.0,
-                -6.5
-            ],
+            "position_mm": [1.0, 6.5],
             "direction": "bidirectional",
             "voltage_v": null,
             "current_max_ma": 10,
@@ -61,10 +51,7 @@
         {
             "id": "GND",
             "label": "Ground",
-            "position_mm": [
-                3.5,
-                -6.5
-            ],
+            "position_mm": [3.5, 6.5],
             "direction": "out",
             "voltage_v": 0,
             "current_max_ma": 500,
@@ -73,30 +60,57 @@
         },
         {
             "id": "SHIELD1",
-            "label": "Shield 1",
-            "position_mm": [
-                -6.5,
-                0
-            ],
+            "label": "Shield tab 1",
+            "position_mm": [-6.5, 0],
             "direction": "bidirectional",
             "voltage_v": 0,
             "current_max_ma": 0,
             "hole_diameter_mm": 2.3,
-            "description": "Mechanical shield tab. Connect to ground or leave floating."
+            "shape": { "type": "rect", "width_mm": 2.3, "length_mm": 1.5 },
+            "description": "Mechanical shield tab. Flat rectangular retention tab for structural mounting."
         },
         {
             "id": "SHIELD2",
-            "label": "Shield 2",
-            "position_mm": [
-                6.5,
-                0
-            ],
+            "label": "Shield tab 2",
+            "position_mm": [6.5, 0],
             "direction": "bidirectional",
             "voltage_v": 0,
             "current_max_ma": 0,
             "hole_diameter_mm": 2.3,
-            "description": "Mechanical shield tab. Connect to ground or leave floating."
+            "shape": { "type": "rect", "width_mm": 2.3, "length_mm": 1.5 },
+            "description": "Mechanical shield tab. Flat rectangular retention tab for structural mounting."
         }
     ],
-    "internal_nets": []
+    "internal_nets": [],
+    "scad": {
+        "features": [
+            {
+                "shape": "rect",
+                "label": "USB port opening",
+                "position_mm": [0, -6.5],
+                "width_mm": 12.2,
+                "length_mm": 5.2,
+                "depth_mm": 4.0,
+                "z_anchor": "cavity_start"
+            },
+            {
+                "shape": "rect",
+                "label": "shield frame left",
+                "position_mm": [-6.5, -3.0],
+                "width_mm": 1.5,
+                "length_mm": 7.0,
+                "depth_mm": 3.0,
+                "z_anchor": "cavity_start"
+            },
+            {
+                "shape": "rect",
+                "label": "shield frame right",
+                "position_mm": [6.5, -3.0],
+                "width_mm": 1.5,
+                "length_mm": 7.0,
+                "depth_mm": 3.0,
+                "z_anchor": "cavity_start"
+            }
+        ]
+    }
 }

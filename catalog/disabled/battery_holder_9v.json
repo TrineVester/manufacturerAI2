@@ -1,0 +1,112 @@
+{
+    "id": "battery_holder_9v",
+    "name": "9V Battery Snap Connector",
+    "description": "Horizontal holder/snap for a standard 9V PP3 battery. Battery lies flat (27×48mm footprint, 17mm tall). Provides 9V nominal. Requires bottom access for battery replacement.",
+    "ui_placement": false,
+    "body": {
+        "shape": "rect",
+        "width_mm": 27.0,
+        "length_mm": 48.0,
+        "height_mm": 17.0
+    },
+    "mounting": {
+        "style": "bottom",
+        "allowed_styles": [
+            "bottom"
+        ],
+        "blocks_routing": true,
+        "keepout_margin_mm": 2.0,
+        "extras": [
+            {
+                "label": "battery hatch",
+                "shape": "hatch",
+                "width_mm": 26.4,
+                "length_mm": 47.4,
+                "thickness_mm": 1.5
+            }
+        ]
+    },
+    "pins": [
+        {
+            "id": "V+",
+            "label": "Positive snap lead (9V)",
+            "position_mm": [6.0, 27.0],
+            "direction": "out",
+            "voltage_v": 9.0,
+            "current_max_ma": 500,
+            "hole_diameter_mm": 1.2,
+            "shape": { "type": "rect", "width_mm": 2.5, "length_mm": 6.0 },
+            "description": "Positive snap lead. Flat solder tab extending from connector body."
+        },
+        {
+            "id": "GND",
+            "label": "Ground snap lead (-)",
+            "position_mm": [-6.0, 27.0],
+            "direction": "out",
+            "voltage_v": 0,
+            "current_max_ma": 500,
+            "hole_diameter_mm": 1.2,
+            "shape": { "type": "rect", "width_mm": 2.5, "length_mm": 6.0 },
+            "description": "Negative snap lead. Flat solder tab extending from connector body."
+        }
+    ],
+    "internal_nets": [],
+    "scad": {
+        "features": [
+            {
+                "shape": "rect",
+                "label": "snap connector housing",
+                "position_mm": [0, 22.0],
+                "width_mm": 16.0,
+                "length_mm": 10.0,
+                "depth_mm": 4.0,
+                "z_anchor": "cavity_start"
+            },
+            {
+                "shape": "rect",
+                "label": "positive snap terminal slot",
+                "position_mm": [4.0, 24.0],
+                "width_mm": 6.5,
+                "length_mm": 1.5,
+                "depth_mm": 3.0,
+                "z_anchor": "cavity_start"
+            },
+            {
+                "shape": "rect",
+                "label": "negative snap terminal slot",
+                "position_mm": [-4.0, 24.0],
+                "width_mm": 6.5,
+                "length_mm": 1.5,
+                "depth_mm": 3.0,
+                "z_anchor": "cavity_start"
+            },
+            {
+                "shape": "rect",
+                "label": "hatch floor opening",
+                "position_mm": [0, 0],
+                "width_mm": 21.4,
+                "length_mm": 47.4,
+                "depth_mm": 4.0,
+                "z_anchor": "ground"
+            },
+            {
+                "shape": "rect",
+                "label": "hatch ledge left",
+                "position_mm": [-11.95, 0],
+                "width_mm": 2.5,
+                "length_mm": 47.4,
+                "depth_mm": 1.8,
+                "z_anchor": "ground"
+            },
+            {
+                "shape": "rect",
+                "label": "hatch ledge right",
+                "position_mm": [11.95, 0],
+                "width_mm": 2.5,
+                "length_mm": 47.4,
+                "depth_mm": 1.8,
+                "z_anchor": "ground"
+            }
+        ]
+    }
+}

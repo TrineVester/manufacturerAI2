@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 
 from .models import (
-    Body, Cap, Hatch, Mounting, Pin, PinGroup, Component,
-    ValidationError, CatalogResult,
+    Body, BodyChannels, Cap, Hatch, SoundHoles, Mounting, Pin, PinGroup, Component,
+    ExtraPart, ValidationError, CatalogResult,
 )
 
 
@@ -85,12 +85,24 @@ def _validate_component(comp: Component) -> list[ValidationError]:
 # ── Parsing ────────────────────────────────────────────────────────
 
 def _parse_body(data: dict) -> Body:
+    ch_raw = data.get("channels")
+    channels = None
+    if ch_raw:
+        channels = BodyChannels(
+            axis=ch_raw["axis"],
+            count=ch_raw["count"],
+            diameter_mm=ch_raw["diameter_mm"],
+            spacing_mm=ch_raw["spacing_mm"],
+            length_mm=ch_raw["length_mm"],
+            center_z_mm=ch_raw["center_z_mm"],
+        )
     return Body(
         shape=data["shape"],
         height_mm=data["height_mm"],
         width_mm=data.get("width_mm"),
         length_mm=data.get("length_mm"),
         diameter_mm=data.get("diameter_mm"),
+        channels=channels,
     )
 
 
@@ -114,6 +126,17 @@ def _parse_hatch(data: dict | None) -> Hatch | None:
     )
 
 
+def _parse_sound_holes(data: dict | None) -> SoundHoles | None:
+    if data is None:
+        return None
+    return SoundHoles(
+        enabled=data.get("enabled", False),
+        pattern=data.get("pattern", "grid"),
+        hole_diameter_mm=data.get("hole_diameter_mm", 1.5),
+        hole_spacing_mm=data.get("hole_spacing_mm", 3.0),
+    )
+
+
 def _parse_mounting(data: dict) -> Mounting:
     return Mounting(
         style=data["style"],
@@ -122,6 +145,7 @@ def _parse_mounting(data: dict) -> Mounting:
         keepout_margin_mm=data["keepout_margin_mm"],
         cap=_parse_cap(data.get("cap")),
         hatch=_parse_hatch(data.get("hatch")),
+        sound_holes=_parse_sound_holes(data.get("sound_holes")),
     )
 
 
@@ -136,6 +160,9 @@ def _parse_pin(data: dict) -> Pin:
         current_max_ma=data.get("current_max_ma"),
         hole_diameter_mm=data.get("hole_diameter_mm", 0.8),
         description=data.get("description", ""),
+        shape=data.get("shape", "round"),
+        shape_width_mm=data.get("shape_width_mm"),
+        shape_length_mm=data.get("shape_length_mm"),
     )
 
 
@@ -151,6 +178,14 @@ def _parse_pin_group(data: dict) -> PinGroup:
 
 
 def _parse_component(data: dict, source_file: str = "") -> Component:
+    extra_parts = []
+    for ep in data.get("extra_parts", []):
+        extra_parts.append(ExtraPart(
+            id=ep["id"],
+            name=ep["name"],
+            description=ep.get("description", ""),
+            scad_module=ep.get("scad_module", ""),
+        ))
     return Component(
         id=data["id"],
         name=data["name"],
@@ -162,6 +197,7 @@ def _parse_component(data: dict, source_file: str = "") -> Component:
         internal_nets=data.get("internal_nets", []),
         pin_groups=[_parse_pin_group(g) for g in data["pin_groups"]] if data.get("pin_groups") else None,
         configurable=data.get("configurable"),
+        extra_parts=extra_parts,
         source_file=source_file,
     )
 

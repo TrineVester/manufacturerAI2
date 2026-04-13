@@ -51,6 +51,8 @@ export function drawComponentIcon(svg, comp, ox, oy, scale, opts = {}) {
 
     // ── 1. Body outline ───────────────────────────────────────
     const group = document.createElementNS(NS, 'g');
+    group.classList.add('vp-comp-group');
+    if (comp.instance_id) group.setAttribute('data-instance-id', comp.instance_id);
 
     if (body.shape === 'circle') {
         const r = ((body.diameter_mm || 5) / 2) * scale;

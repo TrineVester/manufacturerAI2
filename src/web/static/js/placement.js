@@ -4,6 +4,7 @@ import { API, state } from './state.js';
 import { setData as setViewportData } from './viewport.js';
 import { enableGuideBtn } from './guide.js';
 import { enableRoutingTab, markRoutingStale } from './routing.js';
+import { refreshSession } from './session.js';
 
 function addStaleBanner(el, msg) {
     if (!el) return;
@@ -102,6 +103,7 @@ export async function runPlacement() {
         // Mark routing as stale (invalidated by new placement)
         markRoutingStale();
         enableRoutingTab(true);
+        refreshSession();
     } catch (e) {
         if (rerun) {
             rerun.textContent = '❌ Error';
@@ -184,12 +186,17 @@ function renderResult(data) {
     toolbar.appendChild(rerunBtn);
     el.appendChild(toolbar);
 
-    // Component table
+    // Component table with color dots
+    const COMP_COLORS = [
+        '#58a6ff', '#3fb950', '#d29922', '#f778ba', '#bc8cff',
+        '#79c0ff', '#56d364', '#e3b341', '#ff7b72', '#a5d6ff',
+    ];
     if (comps.length > 0) {
         const table = document.createElement('table');
         table.className = 'vp-table';
         table.innerHTML = `
             <thead><tr>
+                <th></th>
                 <th>Instance</th>
                 <th>Catalog ID</th>
                 <th>X (mm)</th>
@@ -197,8 +204,9 @@ function renderResult(data) {
                 <th>Rotation</th>
             </tr></thead>
             <tbody>
-                ${comps.map(c => `
-                    <tr>
+                ${comps.map((c, i) => `
+                    <tr data-instance-id="${esc(c.instance_id)}">
+                        <td><span class="color-dot" style="background:${COMP_COLORS[i % COMP_COLORS.length]}"></span></td>
                         <td class="vp-mono">${esc(c.instance_id)}</td>
                         <td>${esc(c.catalog_id)}</td>
                         <td class="vp-mono">${c.x_mm.toFixed(1)}</td>
@@ -208,6 +216,18 @@ function renderResult(data) {
                 `).join('')}
             </tbody>`;
         el.appendChild(table);
+
+        // Hover: table row ↔ SVG component highlighting
+        table.addEventListener('mouseenter', e => {
+            const row = e.target.closest('tr[data-instance-id]');
+            if (!row) return;
+            _highlightComponent(row.dataset.instanceId, true);
+        }, true);
+        table.addEventListener('mouseleave', e => {
+            const row = e.target.closest('tr[data-instance-id]');
+            if (!row) return;
+            _highlightComponent(row.dataset.instanceId, false);
+        }, true);
     }
 }
 
@@ -215,6 +235,26 @@ function renderError(msg) {
     const el = infoDiv();
     if (!el) return;
     el.innerHTML = `<div class="placement-error"><strong>Placement failed</strong><p>${esc(msg)}</p></div>`;
+}
+
+/**
+ * Highlight a component in the viewport SVG and the panel table.
+ * @param {string} instanceId  Component instance_id
+ * @param {boolean} on         true = highlight, false = remove highlight
+ */
+function _highlightComponent(instanceId, on) {
+    // Highlight SVG group in viewport
+    const viewport = document.getElementById('viewport-content');
+    if (viewport) {
+        const svgGroup = viewport.querySelector(`g.vp-comp-group[data-instance-id="${instanceId}"]`);
+        if (svgGroup) svgGroup.classList.toggle('vp-hover', on);
+    }
+    // Highlight table row in panel
+    const info = infoDiv();
+    if (info) {
+        const row = info.querySelector(`tr[data-instance-id="${instanceId}"]`);
+        if (row) row.classList.toggle('vp-hover', on);
+    }
 }
 
 function esc(text) {

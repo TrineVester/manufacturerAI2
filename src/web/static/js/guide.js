@@ -22,15 +22,34 @@ export function enableGuideBtn(enabled = true) {
 }
 
 /**
- * Open the guide screen. Fetches placement data and builds steps.
+ * Open the guide screen. Generates assembly guide on server, then renders.
  */
 export async function openGuide() {
     const screen = document.getElementById('guide-screen');
     if (!screen) return;
 
-    // Fetch placement result
     if (!state.session) return;
-    let data;
+
+    // Generate assembly guide (server-side) — tolerates missing routing
+    let guide;
+    try {
+        const genRes = await fetch(
+            `${API}/api/session/assembly?session=${encodeURIComponent(state.session)}`,
+            { method: 'POST' },
+        );
+        if (genRes.ok) {
+            guide = await genRes.json();
+        } else {
+            // fallback: try to load existing
+            const getRes = await fetch(
+                `${API}/api/session/assembly/result?session=${encodeURIComponent(state.session)}`,
+            );
+            if (getRes.ok) guide = await getRes.json();
+        }
+    } catch { /* continue without server guide */ }
+
+    // Always fetch placement data for SVG rendering
+    let placementData;
     try {
         const res = await fetch(
             `${API}/api/session/placement/result?session=${encodeURIComponent(state.session)}`,
@@ -40,15 +59,19 @@ export async function openGuide() {
             screen.hidden = false;
             return;
         }
-        data = await res.json();
+        placementData = await res.json();
     } catch {
         _showEmpty('Could not load placement data.');
         screen.hidden = false;
         return;
     }
 
-    // Build steps from placement
-    _buildSteps(data);
+    // Build steps from server guide (preferred) or client-side fallback
+    if (guide && guide.steps) {
+        _buildStepsFromGuide(guide, placementData);
+    } else {
+        _buildSteps(placementData);
+    }
     guideIndex = 0;
     _renderSectionNav();
     _renderGuideStep();
@@ -152,6 +175,114 @@ function _buildSteps(data) {
             `• Pin 1 / polarity markers are correctly oriented\n` +
             `• All leads are fully inserted into their holes\n\n` +
             `You can now proceed to the next pipeline stage.`,
+        showPlacementView: false,
+        section: 'Finish',
+    });
+}
+
+/**
+ * Build guide steps from server-generated assembly data.
+ * Uses structured instructions, wiring info, and warnings from the backend.
+ */
+function _buildStepsFromGuide(guide, placementData) {
+    const components = placementData.components || [];
+    guideComponents = components;
+    guideOutline = placementData.outline || [];
+    guideSteps = [];
+    guideSections = [];
+
+    // ── Introduction step ────────────────────────────────────────
+    guideSections.push({ name: 'Introduction', index: 0 });
+    guideSteps.push({
+        title: 'Component Assembly Guide',
+        subtitle: 'Introduction',
+        body:
+            `This guide walks you through inserting each electronic component ` +
+            `into the 3D-printed enclosure.\n\n` +
+            `<strong>${guide.total_components}</strong> component${guide.total_components !== 1 ? 's' : ''} to insert` +
+            (guide.total_connections ? `, <strong>${guide.total_connections}</strong> traced connection${guide.total_connections !== 1 ? 's' : ''}` : '') +
+            `.\n\nUse the arrow navigation or the Manual sidebar to move between steps.`,
+        showPlacementView: false,
+        section: 'Introduction',
+    });
+
+    // ── Checklist step ───────────────────────────────────────────
+    let listHTML = '';
+    for (const item of guide.checklist || []) {
+        const countTag = item.count > 1 ? `<span class="component-count">× ${item.count}</span>` : '';
+        listHTML += `<li><span class="component-name">${item.label}</span>${countTag}</li>`;
+    }
+
+    guideSections.push({ name: 'Checklist', index: guideSteps.length });
+    guideSteps.push({
+        title: 'Component Checklist',
+        subtitle: 'Materials Needed',
+        body:
+            `Gather these components before starting:\n\n` +
+            `<ul class="component-list">${listHTML}</ul>\n\n` +
+            `Make sure you have everything ready before beginning assembly.`,
+        showPlacementView: false,
+        section: 'Checklist',
+    });
+
+    // ── Per-step from server ─────────────────────────────────────
+    for (const step of guide.steps || []) {
+        const sectionName = _sectionName(step.component_type);
+        guideSections.push({ name: sectionName, index: guideSteps.length });
+
+        // Find component indices in the placement array for SVG highlighting
+        const instanceIds = new Set((step.instances || []).map(i => i.instance_id));
+        const indices = [];
+        components.forEach((c, i) => { if (instanceIds.has(c.instance_id)) indices.push(i); });
+
+        // Build body HTML from server instructions + warnings + wiring
+        let bodyParts = [];
+
+        if (step.instructions?.length) {
+            bodyParts.push(`<strong>Instructions:</strong>`);
+            for (const instr of step.instructions) {
+                bodyParts.push(instr.startsWith('  →') ? instr : `• ${instr}`);
+            }
+        }
+
+        if (step.warnings?.length) {
+            bodyParts.push('');
+            bodyParts.push(`<strong>⚠ Warnings:</strong>`);
+            for (const w of step.warnings) bodyParts.push(`• ${w}`);
+        }
+
+        if (step.wiring?.length) {
+            bodyParts.push('');
+            bodyParts.push(`<strong>Wiring Connections:</strong>`);
+            for (const w of step.wiring) {
+                const len = w.trace_length_mm ? ` (${w.trace_length_mm} mm)` : '';
+                bodyParts.push(`• ${w.net_id}: ${w.from_instance}:${w.from_pin} → ${w.to_instance}:${w.to_pin}${len}`);
+            }
+        }
+
+        const count = step.instances?.length || 0;
+        guideSteps.push({
+            title: step.title,
+            subtitle: count > 1 ? `${count} to insert` : '1 to insert',
+            body: bodyParts.join('\n'),
+            componentIndices: indices,
+            showPlacementView: true,
+            section: sectionName,
+        });
+    }
+
+    // ── Final checks step ────────────────────────────────────────
+    guideSections.push({ name: 'Finish', index: guideSteps.length });
+    let finalBody = `All components have been placed.\n\n<strong>Final Checks:</strong>\n`;
+    for (const check of guide.final_checks || []) {
+        finalBody += `• ${check}\n`;
+    }
+    finalBody += `\nYou can now proceed to the next pipeline stage.`;
+
+    guideSteps.push({
+        title: 'Assembly Complete',
+        subtitle: 'Final Check',
+        body: finalBody,
         showPlacementView: false,
         section: 'Finish',
     });

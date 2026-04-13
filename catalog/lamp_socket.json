@@ -1,0 +1,60 @@
+{
+    "id": "lamp_socket",
+    "name": "Lamp Socket",
+    "description": "Cylindrical lamp socket for standard bulbs. Body is 34.3mm diameter, 12mm tall. Two rectangular blade pins on the bottom, each 7.25mm long × 1.05mm wide × 11mm tall, spaced 25.31mm apart center-to-center. Drops into a 34.3mm circular cutout from above.",
+    "ui_placement": true,
+    "body": {
+        "shape": "circle",
+        "diameter_mm": 34.3,
+        "height_mm": 12.0
+    },
+    "mounting": {
+        "style": "top",
+        "allowed_styles": [
+            "top"
+        ],
+        "blocks_routing": false,
+        "keepout_margin_mm": 2.0
+    },
+    "pin_length_mm": 11.0,
+    "pins": [
+        {
+            "id": "1",
+            "label": "Lead 1",
+            "position_mm": [
+                -12.655,
+                0
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 500,
+            "hole_diameter_mm": 1.5,
+            "description": "Left blade pin.",
+            "shape": {
+                "type": "rect",
+                "width_mm": 1.05,
+                "length_mm": 7.25
+            }
+        },
+        {
+            "id": "2",
+            "label": "Lead 2",
+            "position_mm": [
+                12.655,
+                0
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 500,
+            "hole_diameter_mm": 1.5,
+            "description": "Right blade pin.",
+            "shape": {
+                "type": "rect",
+                "width_mm": 1.05,
+                "length_mm": 7.25
+            }
+        }
+    ],
+    "internal_nets": [],
+    "configurable": {}
+}

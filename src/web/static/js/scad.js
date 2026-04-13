@@ -2,6 +2,7 @@
 
 import { API, state } from './state.js';
 import { setData as setViewportData } from './viewport.js';
+import { enableManufacturingTab } from './manufacturing.js';
 
 // Active poll timer handle
 let _pollTimer = null;
@@ -84,6 +85,7 @@ export async function runScad() {
         const data = await res.json();
         renderResult(data);
         stopTabFlash();
+        enableManufacturingTab(true);
         // Kick off STL compile in the background
         startStlCompile(data);
     } catch (e) {
@@ -116,6 +118,7 @@ export async function loadScadResult() {
         const data = await res.json();
         renderResult(data);
         stopTabFlash();
+        enableManufacturingTab(true);
         // Also check STL status
         pollOrRestoreStl(data);
     } catch {

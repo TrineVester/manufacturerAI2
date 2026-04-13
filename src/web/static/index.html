@@ -9,6 +9,34 @@
 <body>
     <header>
         <h1>ManufacturerAI</h1>
+        <div class="settings-menu" id="settings-menu">
+            <button class="settings-gear" id="settings-gear" title="Settings">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+            </button>
+            <div class="settings-dropdown" id="settings-dropdown" hidden>
+                <div class="settings-section">
+                    <label class="settings-label">Theme</label>
+                    <div class="theme-switcher" id="theme-switcher">
+                        <button class="theme-btn active" data-theme="midnight" title="Midnight"></button>
+                        <button class="theme-btn" data-theme="ocean" title="Ocean"></button>
+                        <button class="theme-btn" data-theme="ember" title="Ember"></button>
+                        <button class="theme-btn" data-theme="light" title="Light"></button>
+                    </div>
+                </div>
+                <div class="settings-section">
+                    <label class="settings-label">Model</label>
+                    <select id="model-select" class="settings-select">
+                        <option value="claude-sonnet-4-6">Claude Sonnet 4</option>
+                        <option value="claude-sonnet-4-20250514">Claude Sonnet 4 (May)</option>
+                        <option value="claude-haiku-4-20250414">Claude Haiku 4</option>
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash ⚠️</option>
+                        <option value="gemini-2.5-pro">Gemini 2.5 Pro ⚠️</option>
+                    </select>
+                </div>
+            </div>
+        </div>
         <div id="session-bar">
             <span id="session-label">New session</span>
             <button id="btn-new-session" title="Start a new design session">+ New</button>
@@ -100,8 +128,28 @@
                 </div>
             </section>
             <section id="step-manufacturing" class="step-panel" hidden>
-                <h2>Manufacturing</h2>
-                <p class="placeholder">Coming in Stage 6</p>
+                <div id="manufacturing-hero" class="placement-hero">
+                    <div class="placement-hero-icon">🏭</div>
+                    <p>Generate G-code for 3D printing and trace bitmaps for ink deposition</p>
+                    <button id="btn-run-manufacturing" class="placement-cta">Run Manufacturing</button>
+                    <span id="manufacturing-status" class="design-status-inline"></span>
+                </div>
+                <div id="manufacturing-scroll" class="placement-scroll" hidden>
+                    <div id="manufacturing-info" class="placement-info"></div>
+                </div>
+                <div id="firmware-section" class="firmware-section" hidden>
+                    <div class="firmware-header">
+                        <h4>⚡ Firmware</h4>
+                        <div class="firmware-actions">
+                            <button id="btn-gen-firmware" class="btn-firmware">Generate Sketch</button>
+                            <button id="btn-download-firmware" class="btn-firmware" hidden>Download .ino</button>
+                            <button id="btn-open-simulator" class="btn-firmware" hidden>Open Simulator</button>
+                        </div>
+                    </div>
+                    <div id="firmware-status" class="firmware-status"></div>
+                    <pre id="firmware-preview" class="firmware-preview" hidden></pre>
+                    <div id="firmware-report" class="firmware-report" hidden></div>
+                </div>
             </section>
         </div>
 
@@ -191,6 +239,23 @@
                 <button class="modal-close" type="button">&times;</button>
             </div>
             <div id="component-detail"></div>
+        </div>
+    </div>
+
+    <!-- Device simulator modal -->
+    <div id="simulator-modal" class="modal" hidden>
+        <div class="modal-content modal-wide">
+            <div class="modal-header">
+                <h2>Device Simulator</h2>
+                <button class="modal-close" type="button">&times;</button>
+            </div>
+            <div id="simulator-container">
+                <div id="simulator-device" class="sim-device"></div>
+                <div id="simulator-console" class="sim-console">
+                    <div class="sim-console-header">Serial Monitor</div>
+                    <pre id="simulator-serial"></pre>
+                </div>
+            </div>
         </div>
     </div>
 

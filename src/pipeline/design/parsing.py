@@ -17,15 +17,15 @@ def parse_design(data: dict) -> DesignSpec:
             config=c.get("config"),
             mounting_style=c.get("mounting_style"),
         )
-        for c in data["components"]
+        for c in data.get("components", [])
     ]
 
     nets = [
         Net(id=n["id"], pins=list(n["pins"]))
-        for n in data["nets"]
+        for n in data.get("nets", [])
     ]
 
-    outline_data = data["outline"]
+    outline_data = data.get("outline", [])
     outline = _parse_outline(outline_data)
 
     ui_placements = [
@@ -36,7 +36,7 @@ def parse_design(data: dict) -> DesignSpec:
             edge_index=p.get("edge_index"),
             conform_to_surface=bool(p.get("conform_to_surface", True)),
         )
-        for p in data["ui_placements"]
+        for p in data.get("ui_placements", [])
     ]
 
     enclosure = _parse_enclosure(data.get("enclosure") or {})

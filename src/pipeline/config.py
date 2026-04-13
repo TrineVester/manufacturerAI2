@@ -23,19 +23,20 @@ class TraceRules:
     trace_width_mm: float = 1.0
     """Width of a single conductive-ink trace."""
 
-    trace_clearance_mm: float = 1.5
+    trace_clearance_mm: float = 2.0
     """Minimum edge-to-edge gap between two traces (or a trace and
-    another net's clearance zone).  1.5 mm gives a 2 mm physical gap
-    between trace edges, providing a safe margin for conductive-ink
-    deposition tolerances and preventing crosstalk / accidental shorts."""
+    another net's clearance zone).  2.0 mm provides a safe margin for
+    conductive-ink deposition tolerances (±0.2 mm) and prevents
+    crosstalk / accidental shorts on silver-ink traces."""
 
     pin_clearance_mm: float = 1.0
     """Minimum gap from a trace edge to a foreign pin centre.
     1.0 mm — keeps well clear of adjacent DIP-28 pins (2.54 mm pitch)
     without adjacent blocked zones overlapping on the 0.5 mm grid."""
 
-    edge_clearance_mm: float = 1.5
-    """Minimum distance from a trace to the outline edge."""
+    edge_clearance_mm: float = 2.5
+    """Minimum distance from a trace to the outline edge.
+    2.5 mm accounts for FDM print tolerances (±0.5 mm) on outlines."""
 
     grid_resolution_mm: float = 0.5
     """Routing-grid cell size."""

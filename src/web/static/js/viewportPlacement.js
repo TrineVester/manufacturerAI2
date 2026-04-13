@@ -137,6 +137,24 @@ function buildPlacementSVG(data) {
         });
     });
 
+    // ── SVG → panel hover linking ──
+    svg.addEventListener('mouseenter', e => {
+        const g = e.target.closest('g.vp-comp-group[data-instance-id]');
+        if (!g) return;
+        const id = g.dataset.instanceId;
+        g.classList.add('vp-hover');
+        const row = document.querySelector(`#placement-info tr[data-instance-id="${id}"]`);
+        if (row) row.classList.add('vp-hover');
+    }, true);
+    svg.addEventListener('mouseleave', e => {
+        const g = e.target.closest('g.vp-comp-group[data-instance-id]');
+        if (!g) return;
+        const id = g.dataset.instanceId;
+        g.classList.remove('vp-hover');
+        const row = document.querySelector(`#placement-info tr[data-instance-id="${id}"]`);
+        if (row) row.classList.remove('vp-hover');
+    }, true);
+
     // ── Dimension labels ──
     const dimH = document.createElementNS(NS, 'text');
     dimH.setAttribute('x', ox + ((maxX - minX) / 2) * SCALE);

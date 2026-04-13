@@ -1,0 +1,147 @@
+{
+    "id": "power_switch_dpdt",
+    "name": "DPDT Power Toggle Switch",
+    "description": "Double-pole double-throw toggle switch for power on/off. Square body 12.93×12.93mm, 10.51mm tall, with a cylindrical toggle lever (5.71mm diameter, 17mm tall) on top. 6 pins in a 2×3 grid underneath. Inserted into the enclosure after printing — the top cutout matches the full 12.93×12.93mm body so the component drops in from above. For simple on/off: wire input to COM1 (pin 2), output from NO1 (pin 1). For DPDT use, both poles are available.",
+    "ui_placement": true,
+    "body": {
+        "shape": "rect",
+        "width_mm": 12.93,
+        "length_mm": 12.93,
+        "height_mm": 10.51
+    },
+    "mounting": {
+        "style": "top",
+        "allowed_styles": [
+            "top"
+        ],
+        "blocks_routing": false,
+        "keepout_margin_mm": 2.0
+    },
+    "pin_length_mm": 4.2,
+    "pins": [
+        {
+            "id": "1",
+            "label": "NO1",
+            "position_mm": [
+                -4.84,
+                -3.395
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 3000,
+            "hole_diameter_mm": 2.5,
+            "description": "Pole 1 normally-open throw. Connected to COM1 (pin 2) when toggle is in ON position.",
+            "shape": {
+                "type": "rect",
+                "width_mm": 2.22,
+                "length_mm": 0.73
+            }
+        },
+        {
+            "id": "2",
+            "label": "COM1",
+            "position_mm": [
+                0,
+                -3.395
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 3000,
+            "hole_diameter_mm": 2.5,
+            "description": "Pole 1 common terminal. Connects to NO1 (pin 1) or NC1 (pin 3) depending on toggle position.",
+            "shape": {
+                "type": "rect",
+                "width_mm": 2.22,
+                "length_mm": 0.73
+            }
+        },
+        {
+            "id": "3",
+            "label": "NC1",
+            "position_mm": [
+                4.84,
+                -3.395
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 3000,
+            "hole_diameter_mm": 2.5,
+            "description": "Pole 1 normally-closed throw. Connected to COM1 (pin 2) when toggle is in OFF position.",
+            "shape": {
+                "type": "rect",
+                "width_mm": 2.22,
+                "length_mm": 0.73
+            }
+        },
+        {
+            "id": "4",
+            "label": "NO2",
+            "position_mm": [
+                -4.84,
+                3.395
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 3000,
+            "hole_diameter_mm": 2.5,
+            "description": "Pole 2 normally-open throw. Connected to COM2 (pin 5) when toggle is in ON position.",
+            "shape": {
+                "type": "rect",
+                "width_mm": 2.22,
+                "length_mm": 0.73
+            }
+        },
+        {
+            "id": "5",
+            "label": "COM2",
+            "position_mm": [
+                0,
+                3.395
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 3000,
+            "hole_diameter_mm": 2.5,
+            "description": "Pole 2 common terminal. Connects to NO2 (pin 4) or NC2 (pin 6) depending on toggle position.",
+            "shape": {
+                "type": "rect",
+                "width_mm": 2.22,
+                "length_mm": 0.73
+            }
+        },
+        {
+            "id": "6",
+            "label": "NC2",
+            "position_mm": [
+                4.84,
+                3.395
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 3000,
+            "hole_diameter_mm": 2.5,
+            "description": "Pole 2 normally-closed throw. Connected to COM2 (pin 5) when toggle is in OFF position.",
+            "shape": {
+                "type": "rect",
+                "width_mm": 2.22,
+                "length_mm": 0.73
+            }
+        }
+    ],
+    "internal_nets": [],
+    "pin_groups": [],
+    "scad": {
+        "features": [
+            {
+                "shape": "circle",
+                "label": "toggle lever",
+                "position_mm": [0, 0],
+                "diameter_mm": 5.71,
+                "depth_mm": 17.0,
+                "z_anchor": "top",
+                "through_surface": true,
+                "description": "Cylindrical toggle lever extending from the top center of the switch body."
+            }
+        ]
+    }
+}

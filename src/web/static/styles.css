@@ -1,20 +1,87 @@
 :root {
+    /* ── Theme: Midnight (default) ───────────────── */
     --bg: #0d1117;
     --surface: #161b22;
     --surface2: #1c2333;
+    --surface-raised: #2a2d35;
     --border: #30363d;
     --text: #e6edf3;
     --text-dim: #8b949e;
+    --text-muted: #6e7681;
     --accent: #58a6ff;
     --accent-dim: #1f6feb;
+    --accent-subtle: rgba(88,166,255,0.1);
     --error: #f85149;
     --error-bg: #2d1214;
     --success: #3fb950;
     --success-bg: #122d1a;
     --warning: #d29922;
+    --warning-bg: #2d2210;
     --radius: 8px;
     --font: 'Segoe UI', -apple-system, sans-serif;
     --mono: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+}
+
+/* ── Theme presets — apply via body[data-theme] ── */
+
+body[data-theme="ocean"] {
+    --bg: #0a192f;
+    --surface: #112240;
+    --surface2: #1d3461;
+    --surface-raised: #264573;
+    --border: #2d4a6f;
+    --text: #ccd6f6;
+    --text-dim: #8892b0;
+    --text-muted: #5f6b8a;
+    --accent: #64ffda;
+    --accent-dim: #0a7e6a;
+    --accent-subtle: rgba(100,255,218,0.1);
+    --error: #ff6b6b;
+    --error-bg: #2d1517;
+    --success: #69db7c;
+    --success-bg: #122d1a;
+    --warning: #ffd43b;
+    --warning-bg: #2d2a10;
+}
+
+body[data-theme="ember"] {
+    --bg: #1a1110;
+    --surface: #241716;
+    --surface2: #2e1e1c;
+    --surface-raised: #3a2725;
+    --border: #4a3533;
+    --text: #fce4e4;
+    --text-dim: #b89a99;
+    --text-muted: #8a6e6d;
+    --accent: #ff6b35;
+    --accent-dim: #cc4a1a;
+    --accent-subtle: rgba(255,107,53,0.1);
+    --error: #ff4444;
+    --error-bg: #2d1010;
+    --success: #74c69d;
+    --success-bg: #12291a;
+    --warning: #ffa62b;
+    --warning-bg: #2d2210;
+}
+
+body[data-theme="light"] {
+    --bg: #f6f8fa;
+    --surface: #ffffff;
+    --surface2: #f0f2f5;
+    --surface-raised: #e8eaed;
+    --border: #d0d7de;
+    --text: #1f2328;
+    --text-dim: #656d76;
+    --text-muted: #8b949e;
+    --accent: #0969da;
+    --accent-dim: #0550ae;
+    --accent-subtle: rgba(9,105,218,0.08);
+    --error: #cf222e;
+    --error-bg: #ffebe9;
+    --success: #1a7f37;
+    --success-bg: #dafbe1;
+    --warning: #9a6700;
+    --warning-bg: #fff8c5;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -35,6 +102,7 @@ header {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    gap: 16px;
     padding: 12px 24px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
@@ -1068,6 +1136,30 @@ main {
     fill-opacity: 0.35 !important;
 }
 
+/* Hover highlight for components (SVG groups) and table rows */
+g.vp-comp-group.vp-hover > * {
+    fill-opacity: 0.5 !important;
+    stroke-opacity: 1 !important;
+    filter: brightness(1.3);
+}
+g.vp-trace-group.vp-hover > * {
+    opacity: 1 !important;
+    stroke-width: 6 !important;
+    filter: brightness(1.4);
+}
+tr.vp-hover {
+    background: var(--accent-subtle) !important;
+}
+
+/* Color dot indicator in tables */
+.color-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    vertical-align: middle;
+}
+
 .vp-placed-label {
     font-size: 9px;
     font-family: var(--mono);
@@ -1828,4 +1920,598 @@ main {
     line-height: 1.3;
     margin-top: 2px;
     font-style: italic;
+}
+
+
+/* ═══════════════════════════════════════════════════
+   Manufacturing Panel
+   ═══════════════════════════════════════════════════ */
+
+#manufacturing-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 40px 20px;
+    text-align: center;
+}
+
+#manufacturing-hero h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+#manufacturing-hero p {
+    color: var(--text-dim);
+    font-size: 13px;
+    max-width: 320px;
+}
+
+#btn-run-manufacturing {
+    padding: 10px 28px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: var(--radius);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+}
+
+#btn-run-manufacturing:hover {
+    background: var(--accent-dim);
+    transform: translateY(-1px);
+}
+
+#btn-run-manufacturing:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+#manufacturing-status {
+    font-size: 12px;
+    color: var(--text-dim);
+    min-height: 16px;
+}
+
+#manufacturing-scroll {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 16px 16px;
+}
+
+.mfg-toolbar-rerun {
+    padding: 6px 16px;
+    font-size: 12px;
+    background: var(--surface2);
+    color: var(--accent);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.mfg-toolbar-rerun:hover {
+    background: var(--accent-subtle, rgba(88,166,255,0.1));
+}
+
+.mfg-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+    gap: 10px;
+    margin: 12px 0;
+}
+
+.mfg-stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.mfg-stat-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.mfg-stat-value {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    font-family: var(--mono);
+}
+
+
+/* ═══════════════════════════════════════════════════
+   Manufacturing Viewport
+   ═══════════════════════════════════════════════════ */
+
+.vp-manufacturing {
+    padding: 24px;
+    height: 100%;
+    overflow-y: auto;
+}
+
+.vp-mfg-header {
+    margin-bottom: 20px;
+}
+
+.vp-mfg-header h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 0;
+}
+
+.vp-mfg-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px;
+}
+
+.vp-mfg-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: border-color 0.15s;
+}
+
+.vp-mfg-card:hover {
+    border-color: var(--accent);
+}
+
+.vp-mfg-card-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.vp-mfg-card-value {
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--accent);
+    font-family: var(--mono);
+}
+
+.vp-mfg-message {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 14px;
+    padding: 40px;
+}
+
+
+/* ═══════════════════════════════════════════════════
+   Markdown (Chat) Enhancements
+   ═══════════════════════════════════════════════════ */
+
+.md-heading {
+    font-weight: 600;
+    color: var(--text);
+    margin: 12px 0 6px;
+    line-height: 1.3;
+}
+
+h4.md-heading { font-size: 15px; }
+h5.md-heading { font-size: 14px; }
+h6.md-heading { font-size: 13px; }
+
+.md-code-block {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin: 8px 0;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--text);
+    white-space: pre;
+}
+
+
+/* ═══════════════════════════════════════════════════
+   Settings Menu (gear icon + dropdown)
+   ═══════════════════════════════════════════════════ */
+
+.settings-menu {
+    position: relative;
+}
+
+.settings-gear {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 4px;
+    border-radius: var(--radius);
+    display: flex;
+    align-items: center;
+    transition: color 0.15s, background 0.15s;
+}
+.settings-gear:hover {
+    color: var(--accent);
+    background: var(--accent-subtle);
+}
+
+.settings-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    min-width: 200px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    z-index: 100;
+}
+
+.settings-section {
+    margin-bottom: 10px;
+}
+.settings-section:last-child {
+    margin-bottom: 0;
+}
+
+.settings-label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 6px;
+}
+
+.settings-select {
+    width: 100%;
+    padding: 5px 8px;
+    font-size: 12px;
+    font-family: var(--font);
+    background: var(--surface2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+}
+.settings-select:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* ═══════════════════════════════════════════════════
+   Theme Switcher
+   ═══════════════════════════════════════════════════ */
+
+.theme-switcher {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+}
+
+.theme-btn {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.15s;
+    padding: 0;
+}
+
+.theme-btn:hover {
+    transform: scale(1.15);
+}
+
+.theme-btn.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-subtle, rgba(88,166,255,0.15));
+}
+
+.theme-btn[data-theme="midnight"] { background: #0d1117; }
+.theme-btn[data-theme="ocean"]    { background: #0a192f; }
+.theme-btn[data-theme="ember"]    { background: #1a1110; }
+.theme-btn[data-theme="light"]    { background: #f6f8fa; }
+
+
+/* ═══════════════════════════════════════════════════
+   Firmware Panel
+   ═══════════════════════════════════════════════════ */
+
+.firmware-section {
+    border-top: 1px solid var(--border);
+    padding: 16px;
+    margin-top: 8px;
+}
+
+.firmware-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.firmware-header h4 {
+    margin: 0;
+    font-size: 14px;
+    color: var(--text);
+}
+
+.firmware-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-firmware {
+    padding: 5px 14px;
+    font-size: 12px;
+    background: var(--surface2);
+    color: var(--accent);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.btn-firmware:hover {
+    background: var(--accent-subtle, rgba(88,166,255,0.1));
+}
+
+.btn-firmware:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.firmware-status {
+    font-size: 12px;
+    color: var(--text-dim);
+    min-height: 16px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.firmware-status-ok   { color: var(--accent); }
+.firmware-status-error { color: var(--warning, #e5534b); }
+.firmware-status-loading { color: var(--text-dim); }
+
+.firmware-spinner {
+    display: inline-block;
+    width: 12px; height: 12px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: fw-spin 0.6s linear infinite;
+}
+@keyframes fw-spin { to { transform: rotate(360deg); } }
+
+.firmware-pin-map h5 {
+    margin: 0 0 6px;
+    font-size: 13px;
+    color: var(--text);
+}
+.firmware-pin-map .vp-table {
+    width: 100%;
+    margin-bottom: 8px;
+}
+.firmware-details {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-top: 8px;
+}
+.firmware-details summary {
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-dim);
+    background: var(--surface);
+}
+.firmware-details pre {
+    padding: 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.4;
+    overflow-x: auto;
+    color: var(--text);
+}
+
+.fw-line-num {
+    color: var(--text-dim);
+    opacity: 0.5;
+    user-select: none;
+}
+.fw-truncated {
+    color: var(--text-dim);
+    font-style: italic;
+}
+
+.firmware-preview {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--text);
+    overflow-x: auto;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre;
+    margin-bottom: 8px;
+}
+
+.firmware-report {
+    /* container — child elements styled individually */
+}
+
+.firmware-warnings {
+    margin-top: 8px;
+}
+
+.fw-warn {
+    font-size: 12px;
+    color: var(--warning);
+    padding: 4px 0;
+}
+
+
+/* ═══════════════════════════════════════════════════
+   Device Simulator
+   ═══════════════════════════════════════════════════ */
+
+#simulator-container {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 16px;
+    min-height: 400px;
+}
+
+.sim-device {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.sim-device-inner {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    align-items: center;
+}
+
+.sim-outline {
+    max-height: 200px;
+}
+
+.sim-components {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: center;
+}
+
+.sim-comp {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.sim-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    font-family: var(--mono);
+}
+
+.sim-btn-cap {
+    width: 40px;
+    height: 40px;
+    border-radius: 6px;
+    background: var(--surface2);
+    border: 2px solid var(--border);
+    cursor: pointer;
+    transition: background 0.1s, transform 0.1s;
+    box-shadow: 0 3px 0 var(--border);
+}
+
+.sim-btn-cap:hover {
+    background: var(--accent-subtle, rgba(88,166,255,0.1));
+    border-color: var(--accent);
+}
+
+.sim-btn-cap.pressed {
+    transform: translateY(2px);
+    box-shadow: 0 1px 0 var(--border);
+    background: var(--accent-dim);
+}
+
+.sim-led-bulb {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    transition: background 0.15s, box-shadow 0.15s;
+}
+
+.sim-led-bulb.off {
+    background: #333;
+    border: 1px solid var(--border);
+}
+
+.sim-led-bulb.on {
+    background: #3fb950;
+    box-shadow: 0 0 12px #3fb950, 0 0 24px rgba(63,185,80,0.3);
+}
+
+.sim-motor-icon {
+    font-size: 28px;
+    transition: color 0.15s;
+}
+
+.sim-motor-icon.off { color: var(--text-dim); }
+.sim-motor-icon.on  {
+    color: var(--accent);
+    animation: sim-spin 0.8s linear infinite;
+}
+
+@keyframes sim-spin {
+    from { transform: rotate(0deg); }
+    to   { transform: rotate(360deg); }
+}
+
+.sim-console {
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+
+.sim-console-header {
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    border-radius: var(--radius) var(--radius) 0 0;
+}
+
+#simulator-serial {
+    padding: 12px;
+    font-family: var(--mono);
+    font-size: 11px;
+    line-height: 1.5;
+    color: var(--success);
+    overflow-y: auto;
+    flex: 1;
+    margin: 0;
+}
+
+.sim-empty {
+    text-align: center;
+    color: var(--text-dim);
+    padding: 40px;
+    font-size: 14px;
 }

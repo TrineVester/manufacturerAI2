@@ -1,13 +1,13 @@
 {
     "id": "resistor_axial",
     "name": "Axial Resistor",
-    "description": "Standard through-hole axial resistor. Value is chosen by the agent at design time based on circuit needs (e.g., current limiting for LEDs: R = (Vsupply - Vled) / Iled). Body length varies with power rating but pin spacing is fixed at 10mm.",
+    "description": "Standard through-hole axial resistor. Value is chosen by the agent at design time based on circuit needs (e.g., current limiting for LEDs: R = (Vsupply - Vled) / Iled). Body length varies with power rating but pin spacing is fixed at 8.5mm.",
     "ui_placement": false,
     "body": {
         "shape": "rect",
-        "width_mm": 6.5,
-        "length_mm": 2.5,
-        "height_mm": 2.5
+        "width_mm": 11,
+        "length_mm": 2.4,
+        "height_mm": 2.4
     },
     "mounting": {
         "style": "internal",
@@ -17,31 +17,32 @@
         "blocks_routing": false,
         "keepout_margin_mm": 1.0
     },
+    "pin_length_mm": 3.7,
     "pins": [
         {
             "id": "1",
             "label": "Lead 1",
             "position_mm": [
-                -5.0,
+                -4.25,
                 0
             ],
             "direction": "bidirectional",
             "voltage_v": null,
             "current_max_ma": 250,
-            "hole_diameter_mm": 0.8,
+            "hole_diameter_mm": 0.6,
             "description": "Non-polarized. Either lead can be input or output."
         },
         {
             "id": "2",
             "label": "Lead 2",
             "position_mm": [
-                5.0,
+                4.25,
                 0
             ],
             "direction": "bidirectional",
             "voltage_v": null,
             "current_max_ma": 250,
-            "hole_diameter_mm": 0.8,
+            "hole_diameter_mm": 0.6,
             "description": "Non-polarized. Either lead can be input or output."
         }
     ],

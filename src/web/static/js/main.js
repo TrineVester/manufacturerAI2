@@ -8,12 +8,16 @@ import { sendDesignPrompt, loadConversation } from './design.js';
 import { runPlacement, loadPlacementResult, enablePlacementTab } from './placement.js';
 import { runRouting, loadRoutingResult, enableRoutingTab } from './routing.js';
 import { runScad, loadScadResult, enableScadTab } from './scad.js';
+import { runManufacturing, loadManufacturingResult, enableManufacturingTab } from './manufacturing.js';
+import { initFirmwarePanel, loadFirmwareResult, showFirmwareSection } from './firmware.js';
 import { initGuide, openGuide, enableGuideBtn } from './guide.js';
+import { initThemeSwitcher } from './theme.js';
 import { setStep } from './viewport.js';
 import './viewportDesign.js';   // registers the design viewport handler
 import './viewportPlacement.js'; // registers the placement viewport handler
 import './viewportRouting.js';   // registers the routing viewport handler
 import './viewportScad.js';      // registers the SCAD / STL viewport handler
+import './viewportManufacturing.js'; // registers the manufacturing viewport handler
 
 document.addEventListener('DOMContentLoaded', () => {
     // Restore session from URL
@@ -25,6 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
         loadPlacementResult();    // load existing placement if present
         loadRoutingResult();      // load existing routing if present
         loadScadResult();         // load existing SCAD if present
+        loadManufacturingResult(); // load existing manufacturing if present
+        loadFirmwareResult();      // load existing firmware if present
         // Fetch session name for the label; clear URL if session no longer exists
         fetch(`${API}/api/session?session=${encodeURIComponent(state.session)}`)
             .then(r => {
@@ -48,6 +54,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data?.artifacts?.routing) {
                     enableScadTab(!data?.artifacts?.scad);
                 }
+                // Enable manufacturing nav if SCAD is complete
+                if (data?.artifacts?.scad) {
+                    enableManufacturingTab(!data?.artifacts?.gcode);
+                }
+                // Show firmware section if routing is complete
+                if (data?.artifacts?.routing) {
+                    showFirmwareSection();
+                }
                 // Enable guide if placement is complete
                 if (data?.artifacts?.placement) {
                     enableGuideBtn(true);
@@ -69,6 +83,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize guide controls
     initGuide();
+
+    // Initialize theme switcher
+    initThemeSwitcher();
+
+    // Initialize firmware panel
+    initFirmwarePanel();
 
     // Header buttons
     document.getElementById('btn-new-session').addEventListener('click', startNewSession);
@@ -117,6 +137,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // SCAD
     document.getElementById('btn-run-scad').addEventListener('click', runScad);
+
+    // Manufacturing
+    document.getElementById('btn-run-manufacturing').addEventListener('click', runManufacturing);
 
     // Design chat
     document.getElementById('btn-send-design').addEventListener('click', sendDesignPrompt);

@@ -157,6 +157,27 @@ function buildRoutingSVG(data) {
         drawTrace(svg, trace, ox, oy, netColorMap[trace.net_id]);
     });
 
+    // ── SVG → panel hover linking for traces ──
+    svg.addEventListener('mouseenter', e => {
+        const g = e.target.closest('g.vp-trace-group[data-net-id]');
+        if (!g) return;
+        const id = g.dataset.netId;
+        // Highlight all trace groups for this net
+        svg.querySelectorAll(`g.vp-trace-group[data-net-id="${id}"]`).forEach(el =>
+            el.classList.add('vp-hover'));
+        const row = document.querySelector(`#routing-info tr[data-net-id="${id}"]`);
+        if (row) row.classList.add('vp-hover');
+    }, true);
+    svg.addEventListener('mouseleave', e => {
+        const g = e.target.closest('g.vp-trace-group[data-net-id]');
+        if (!g) return;
+        const id = g.dataset.netId;
+        svg.querySelectorAll(`g.vp-trace-group[data-net-id="${id}"]`).forEach(el =>
+            el.classList.remove('vp-hover'));
+        const row = document.querySelector(`#routing-info tr[data-net-id="${id}"]`);
+        if (row) row.classList.remove('vp-hover');
+    }, true);
+
     // ── Trace legend ──
     if (traces.length > 0) {
         const legendY = h - 8;
@@ -227,6 +248,11 @@ function drawTrace(svg, trace, ox, oy, color) {
     const path = trace.path;
     if (!path || path.length < 2) return;
 
+    // Wrap all trace elements in a group with data-net-id for hover linking
+    const group = document.createElementNS(NS, 'g');
+    group.classList.add('vp-trace-group');
+    group.setAttribute('data-net-id', trace.net_id);
+
     // Main trace line — stroke-width matches physical trace width (1 mm × SCALE px/mm)
     const TRACE_W_PX = 1.0 * SCALE;   // 4 px = 1 mm at current scale
     const points = path.map(p => `${ox + p[0] * SCALE},${oy + p[1] * SCALE}`).join(' ');
@@ -238,7 +264,7 @@ function drawTrace(svg, trace, ox, oy, color) {
     polyline.setAttribute('stroke-linecap', 'round');
     polyline.setAttribute('stroke-linejoin', 'round');
     polyline.setAttribute('opacity', '0.85');
-    svg.appendChild(polyline);
+    group.appendChild(polyline);
 
     // Via dots at each waypoint (intermediate points)
     for (let i = 1; i < path.length - 1; i++) {
@@ -248,7 +274,7 @@ function drawTrace(svg, trace, ox, oy, color) {
         dot.setAttribute('r', '2');
         dot.setAttribute('fill', color);
         dot.setAttribute('opacity', '0.7');
-        svg.appendChild(dot);
+        group.appendChild(dot);
     }
 
     // Endpoint pads (start and end)
@@ -260,8 +286,10 @@ function drawTrace(svg, trace, ox, oy, color) {
         pad.setAttribute('fill', color);
         pad.setAttribute('stroke', '#0d1117');
         pad.setAttribute('stroke-width', '1');
-        svg.appendChild(pad);
+        group.appendChild(pad);
     }
+
+    svg.appendChild(group);
 }
 
 

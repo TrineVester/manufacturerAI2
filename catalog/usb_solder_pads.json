@@ -1,0 +1,91 @@
+{
+    "id": "usb_solder_pads",
+    "name": "USB Solder Pads",
+    "description": "Four through-hole solder pads for direct USB cable wiring (VCC, D+, D-, GND). Cuts a rectangular hole through the enclosure side wall for cable routing. Pads are spaced 3.5mm apart in a single row.",
+    "ui_placement": true,
+    "body": {
+        "shape": "rect",
+        "width_mm": 12,
+        "length_mm": 8,
+        "height_mm": 6
+    },
+    "mounting": {
+        "style": "side",
+        "allowed_styles": [
+            "side"
+        ],
+        "blocks_routing": false,
+        "keepout_margin_mm": 1.5
+    },
+    "pin_length_mm": 3.5,
+    "pins": [
+        {
+            "id": "VCC",
+            "label": "VCC (+5V)",
+            "position_mm": [
+                -5.25,
+                0
+            ],
+            "direction": "out",
+            "voltage_v": 5.0,
+            "current_max_ma": 500,
+            "hole_diameter_mm": 1.0,
+            "description": "USB +5V power. Solder red wire here."
+        },
+        {
+            "id": "D-",
+            "label": "D-",
+            "position_mm": [
+                -1.75,
+                0
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 50,
+            "hole_diameter_mm": 1.0,
+            "description": "USB data minus. Solder white wire here."
+        },
+        {
+            "id": "D+",
+            "label": "D+",
+            "position_mm": [
+                1.75,
+                0
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 50,
+            "hole_diameter_mm": 1.0,
+            "description": "USB data plus. Solder green wire here."
+        },
+        {
+            "id": "GND",
+            "label": "GND",
+            "position_mm": [
+                5.25,
+                0
+            ],
+            "direction": "out",
+            "voltage_v": 0,
+            "current_max_ma": 500,
+            "hole_diameter_mm": 1.0,
+            "description": "USB ground. Solder black wire here."
+        }
+    ],
+    "internal_nets": [],
+    "configurable": {},
+    "scad": {
+        "features": [
+            {
+                "shape": "rect",
+                "label": "Cable pass-through hole",
+                "position_mm": [0, 0],
+                "width_mm": 5,
+                "length_mm": 6,
+                "depth_mm": 6,
+                "z_anchor": "cavity_start",
+                "description": "Rectangular hole through the side wall for the USB cable to pass through."
+            }
+        ]
+    }
+}

@@ -45,6 +45,11 @@ def component_to_dict(c: Component) -> dict:
                 "current_max_ma": p.current_max_ma,
                 "hole_diameter_mm": p.hole_diameter_mm,
                 "description": p.description,
+                **({
+                    "shape": p.shape,
+                    "shape_width_mm": p.shape_width_mm,
+                    "shape_length_mm": p.shape_length_mm,
+                } if p.shape != "round" else {}),
             }
             for p in c.pins
         ],
@@ -60,6 +65,18 @@ def component_to_dict(c: Component) -> dict:
     if c.body.diameter_mm is not None:
         d["body"]["diameter_mm"] = c.body.diameter_mm
 
+    # Body channels
+    if c.body.channels:
+        ch = c.body.channels
+        d["body"]["channels"] = {
+            "axis": ch.axis,
+            "count": ch.count,
+            "diameter_mm": ch.diameter_mm,
+            "spacing_mm": ch.spacing_mm,
+            "length_mm": ch.length_mm,
+            "center_z_mm": ch.center_z_mm,
+        }
+
     # Optional mounting sub-objects
     if c.mounting.cap:
         d["mounting"]["cap"] = {
@@ -72,6 +89,13 @@ def component_to_dict(c: Component) -> dict:
             "enabled": c.mounting.hatch.enabled,
             "clearance_mm": c.mounting.hatch.clearance_mm,
             "thickness_mm": c.mounting.hatch.thickness_mm,
+        }
+    if c.mounting.sound_holes:
+        d["mounting"]["sound_holes"] = {
+            "enabled": c.mounting.sound_holes.enabled,
+            "pattern": c.mounting.sound_holes.pattern,
+            "hole_diameter_mm": c.mounting.sound_holes.hole_diameter_mm,
+            "hole_spacing_mm": c.mounting.sound_holes.hole_spacing_mm,
         }
 
     # Optional fields
@@ -89,5 +113,17 @@ def component_to_dict(c: Component) -> dict:
         ]
     if c.configurable:
         d["configurable"] = c.configurable
+
+    # Extra parts (companion printed pieces)
+    if c.extra_parts:
+        d["extra_parts"] = [
+            {
+                "id": ep.id,
+                "name": ep.name,
+                "description": ep.description,
+                "scad_module": ep.scad_module,
+            }
+            for ep in c.extra_parts
+        ]
 
     return d

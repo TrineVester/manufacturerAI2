@@ -1,0 +1,50 @@
+{
+    "id": "crystal_16mhz",
+    "name": "16MHz Crystal Oscillator",
+    "description": "16MHz quartz crystal oscillator. Requires two 20pF load capacitors.",
+    "ui_placement": false,
+    "body": {
+        "shape": "rect",
+        "width_mm": 11,
+        "length_mm": 4.5,
+        "height_mm": 3.5
+    },
+    "mounting": {
+        "style": "internal",
+        "allowed_styles": [
+            "internal"
+        ],
+        "blocks_routing": false,
+        "keepout_margin_mm": 1.0
+    },
+    "pin_length_mm": 5,
+    "pins": [
+        {
+            "id": "1",
+            "label": "XTAL1",
+            "position_mm": [
+                -2.75,
+                0
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 10,
+            "hole_diameter_mm": 0.8,
+            "description": "Crystal input pin."
+        },
+        {
+            "id": "2",
+            "label": "XTAL2",
+            "position_mm": [
+                2.75,
+                0
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 10,
+            "hole_diameter_mm": 0.8,
+            "description": "Crystal output pin."
+        }
+    ],
+    "internal_nets": []
+}

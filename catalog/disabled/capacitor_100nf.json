@@ -1,0 +1,49 @@
+{
+    "id": "capacitor_100nf",
+    "name": "100nF Ceramic Capacitor",
+    "description": "Bypass/decoupling capacitor. Place close to MCU VCC/GND pins to filter power supply noise. Essential for stable MCU operation. Typically one per VCC pin.",
+    "ui_placement": false,
+    "body": {
+        "shape": "rect",
+        "width_mm": 5.0,
+        "length_mm": 2.5,
+        "height_mm": 3.0
+    },
+    "mounting": {
+        "style": "internal",
+        "allowed_styles": [
+            "internal"
+        ],
+        "blocks_routing": false,
+        "keepout_margin_mm": 1.0
+    },
+    "pins": [
+        {
+            "id": "1",
+            "label": "Lead 1",
+            "position_mm": [
+                -2.5,
+                0
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 500,
+            "hole_diameter_mm": 0.8,
+            "description": "Non-polarized. Connect to VCC."
+        },
+        {
+            "id": "2",
+            "label": "Lead 2",
+            "position_mm": [
+                2.5,
+                0
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 500,
+            "hole_diameter_mm": 0.8,
+            "description": "Non-polarized. Connect to GND."
+        }
+    ],
+    "internal_nets": []
+}

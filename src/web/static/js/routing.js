@@ -3,6 +3,7 @@
 import { API, state } from './state.js';
 import { setData as setViewportData, setStale } from './viewport.js';
 import { enableScadTab } from './scad.js';
+import { refreshSession } from './session.js';
 
 function addStaleBanner(el, msg) {
     if (!el) return;
@@ -113,6 +114,7 @@ export async function runRouting() {
         setViewportData('routing', data);
         stopTabFlash();
         enableScadTab(true);
+        refreshSession();
     } catch (e) {
         if (rerun) {
             rerun.textContent = '❌ Error';
@@ -238,12 +240,23 @@ function renderResult(data) {
         el.appendChild(warn);
     }
 
-    // Net table (merged by net_id, with pins)
+    // Build net color map (matching the viewport SVG trace colors)
+    const netColorMap = {};
+    {
+        const n = netOrder.length;
+        netOrder.forEach((id, i) => {
+            const hue = Math.round((i * 360) / (n || 1));
+            netColorMap[id] = `hsl(${hue}, 75%, 60%)`;
+        });
+    }
+
+    // Net table (merged by net_id, with pins and color dots)
     if (netOrder.length > 0) {
         const table = document.createElement('table');
         table.className = 'vp-table';
         table.innerHTML = `
             <thead><tr>
+                <th></th>
                 <th>Net</th>
                 <th>Pins</th>
                 <th>Segments</th>
@@ -252,12 +265,14 @@ function renderResult(data) {
             <tbody>
                 ${netOrder.map(key => {
                     const m = mergedNets[key];
+                    const color = netColorMap[key] || 'var(--text)';
                     const pins = netPinMap[key]
                         ? [...netPinMap[key]].map(p => esc(p)).join(', ')
                         : '';
                     return `
-                    <tr>
-                        <td class="vp-mono">${esc(m.net_id)}</td>
+                    <tr data-net-id="${esc(m.net_id)}">
+                        <td><span class="color-dot" style="background:${color}"></span></td>
+                        <td class="vp-mono" style="color:${color}">${esc(m.net_id)}</td>
                         <td class="vp-mono" style="font-size:11px; color:var(--text-muted)">${pins}</td>
                         <td class="vp-mono">${m.segments}</td>
                         <td class="vp-mono">${m.length.toFixed(1)}</td>
@@ -265,6 +280,18 @@ function renderResult(data) {
                 }).join('')}
             </tbody>`;
         el.appendChild(table);
+
+        // Hover: table row ↔ SVG trace highlighting
+        table.addEventListener('mouseenter', e => {
+            const row = e.target.closest('tr[data-net-id]');
+            if (!row) return;
+            _highlightNet(row.dataset.netId, true);
+        }, true);
+        table.addEventListener('mouseleave', e => {
+            const row = e.target.closest('tr[data-net-id]');
+            if (!row) return;
+            _highlightNet(row.dataset.netId, false);
+        }, true);
     }
 
     // Pin assignments
@@ -301,6 +328,25 @@ function renderError(msg) {
     const el = infoDiv();
     if (!el) return;
     el.innerHTML = `<div class="placement-error"><strong>Routing failed</strong><p>${esc(msg)}</p></div>`;
+}
+
+/**
+ * Highlight a net's traces in the viewport SVG and the panel table row.
+ */
+function _highlightNet(netId, on) {
+    // Highlight SVG traces in viewport
+    const viewport = document.getElementById('viewport-content');
+    if (viewport) {
+        viewport.querySelectorAll(`[data-net-id="${netId}"]`).forEach(el => {
+            el.classList.toggle('vp-hover', on);
+        });
+    }
+    // Highlight table row in panel
+    const info = infoDiv();
+    if (info) {
+        const row = info.querySelector(`tr[data-net-id="${netId}"]`);
+        if (row) row.classList.toggle('vp-hover', on);
+    }
 }
 
 function traceLength(path) {

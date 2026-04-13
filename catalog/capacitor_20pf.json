@@ -1,0 +1,50 @@
+{
+    "id": "capacitor_20pf",
+    "name": "20pF Ceramic Capacitor",
+    "description": "Load capacitor for crystal oscillator. Two required, one on each crystal pin (XTAL1 and XTAL2) to GND.",
+    "ui_placement": false,
+    "body": {
+        "shape": "rect",
+        "width_mm": 6,
+        "length_mm": 3,
+        "height_mm": 4.5
+    },
+    "mounting": {
+        "style": "internal",
+        "allowed_styles": [
+            "internal"
+        ],
+        "blocks_routing": false,
+        "keepout_margin_mm": 1.0
+    },
+    "pin_length_mm": 4.5,
+    "pins": [
+        {
+            "id": "1",
+            "label": "Lead 1",
+            "position_mm": [
+                -3,
+                0
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 100,
+            "hole_diameter_mm": 0.7,
+            "description": "Non-polarized."
+        },
+        {
+            "id": "2",
+            "label": "Lead 2",
+            "position_mm": [
+                3,
+                0
+            ],
+            "direction": "bidirectional",
+            "voltage_v": null,
+            "current_max_ma": 100,
+            "hole_diameter_mm": 0.7,
+            "description": "Non-polarized."
+        }
+    ],
+    "internal_nets": []
+}

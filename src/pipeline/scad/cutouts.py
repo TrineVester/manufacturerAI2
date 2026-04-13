@@ -49,11 +49,24 @@ SURFACE_OVERSHOOT: float = 0.5  # extra depth so surface holes cleanly exit
 PINHOLE_CLEARANCE: float = 0.15   # added to catalog hole_diameter_mm
 PINHOLE_TAPER_D: float = 1.4      # wide entry funnel side length (mm)
 PINHOLE_TAPER_DEPTH: float = 0.5  # taper zone height
+PINHOLE_FUNNEL_STEPS: int = 3     # graduated funnel layers (smooth insertion)
 
 # ── Trace / component dimensions  ──────────────────────────────────
 
 TRACE_WIDTH: float = 1.2           # conductive-filament channel width (mm)
 COMPONENT_MARGIN: float = 1.5      # extra clearance around body footprint
+
+# ── Button snap-fit geometry ───────────────────────────────────────
+
+SNAP_WALL: float = 1.2             # socket wall thickness (mm)
+SNAP_LIP: float = 0.5              # inward lip that retains the cap (mm)
+SNAP_LIP_HEIGHT: float = 0.4       # lip thickness in Z (mm)
+SNAP_GAP: float = 0.3              # clearance between cap and socket wall
+
+# ── Support platform ──────────────────────────────────────────────
+
+SUPPORT_PLATFORM_H: float = 1.0    # default platform height above CAVITY_TOP (mm)
+SUPPORT_PAD: float = 1.0           # extra XY margin beyond body for platform
 
 
 # ── Data type ─────────────────────────────────────────────────────
@@ -191,9 +204,17 @@ def _component_cutouts(
         _top_mount(comp, cat, cuts, outline, enclosure, ceil_start, cavity_depth)
     elif style == "bottom":
         _bottom_mount(comp, cat, cuts, base_h, ceil_start, cavity_depth)
+    elif style == "side":
+        _side_mount(comp, cat, cuts, outline, enclosure, ceil_start, cavity_depth)
     else:
         # "internal" and everything else
         _internal_mount(comp, cat, cuts, ceil_start, cavity_depth)
+
+    # Sound holes (speaker grille etc.) — processed regardless of mount style
+    if hasattr(cat.mounting, 'sound_holes') and cat.mounting.sound_holes:
+        sh = cat.mounting.sound_holes
+        if getattr(sh, 'enabled', False):
+            _sound_holes(comp, cat, cuts, outline, enclosure, ceil_start)
 
 
 # ── Top-mount components ───────────────────────────────────────────
@@ -234,9 +255,19 @@ def _top_mount(
             cylinder_cy=cy,
         ))
 
-        # Body pocket: rectangular cavity below ceiling
-        bw = (body.width_mm or 6.0) + 2 * COMPONENT_MARGIN
-        bh = (body.length_mm or 6.0) + 2 * COMPONENT_MARGIN
+        # Socket wall: annular ring around the cap hole inside the cavity.
+        # The socket is a cylinder whose inner radius matches the cap hole
+        # and whose outer radius adds SNAP_WALL thickness.  We approximate
+        # it as a polygon difference (outer circle - inner circle) emitted
+        # as two separate cutouts:
+        #   1. Outer socket pocket (larger cylinder) at full cavity depth
+        #   2. Inner socket bore (cap-sized cylinder) at cavity depth
+        # Only the body pocket cutout is needed; the cap hole already
+        # carves the bore.  The socket is realised by the body pocket
+        # being wider than the cap hole.
+        socket_r = cap_r + SNAP_WALL + SNAP_GAP
+        bw = max((body.width_mm or 6.0) + 2 * COMPONENT_MARGIN, socket_r * 2)
+        bh = max((body.length_mm or 6.0) + 2 * COMPONENT_MARGIN, socket_r * 2)
         poly = _rect(cx, cy, bw, bh)
         if comp.rotation_deg:
             poly = _rotated(poly, comp.rotation_deg, cx, cy)
@@ -246,6 +277,21 @@ def _top_mount(
             z_base=CAVITY_TOP,
             label=f"button body — {cid}",
         ))
+
+        # Snap-fit lip: a shallow annular ring just below the ceiling
+        # that is NARROWER than the cap hole, creating an inward lip
+        # that retains the cap once pushed past it.
+        lip_r = cap_r - SNAP_LIP
+        if lip_r > 0 and SNAP_LIP_HEIGHT > 0:
+            cuts.append(Cutout(
+                polygon=[],
+                depth=SNAP_LIP_HEIGHT,
+                z_base=ceil_start - SNAP_LIP_HEIGHT,
+                label=f"snap lip — {cid}",
+                cylinder_r=lip_r,
+                cylinder_cx=cx,
+                cylinder_cy=cy,
+            ))
 
         _pinholes(comp, cat, cuts)
         return
@@ -382,11 +428,26 @@ def _internal_mount(
     ceil_start: float,
     cavity_depth: float,
 ) -> None:
-    """Pocket + pinholes for fully internal components (MCU, resistors, etc.)."""
+    """Pocket + support platform + pinholes for internal components.
+
+    Internal components (MCU, resistors, etc.) need:
+      1. A body pocket that clears the component + margins.
+      2. A support platform just below the pocket — a solid ledge that
+         remains after the cavity is carved.  This keeps the component
+         at the correct Z height for pin alignment.
+    """
     cx, cy = comp.x_mm, comp.y_mm
     cid = comp.instance_id
     body = cat.body
     margin = COMPONENT_MARGIN
+
+    # Determine the component sitting height: pin legs extend from
+    # FLOOR_TOP to CAVITY_TOP (0.5-1mm).  The body itself rests at
+    # CAVITY_TOP, so we carve the body pocket starting there.  A
+    # support platform lip around the pocket holds the body in place.
+    body_h = body.height_mm
+    # Only create a pocket as deep as the body + margin (don't over-carve)
+    pocket_depth = min(body_h + margin, cavity_depth)
 
     if body.shape == "rect":
         w = (body.width_mm  or 5.0) + 2 * margin
@@ -398,13 +459,28 @@ def _internal_mount(
         r = (body.diameter_mm or 5.0) / 2 + margin
         cuts.append(Cutout(
             polygon=[],
-            depth=cavity_depth,
+            depth=pocket_depth,
             z_base=CAVITY_TOP,
             label=f"body pocket — {cid}",
             cylinder_r=r,
             cylinder_cx=cx,
             cylinder_cy=cy,
         ))
+        # Support platform — wider pocket at a shallower depth above
+        # the body pocket so a rim of solid material supports the
+        # component from below.
+        plat_r = r + SUPPORT_PAD
+        plat_depth = SUPPORT_PLATFORM_H
+        if pocket_depth + plat_depth <= cavity_depth:
+            cuts.append(Cutout(
+                polygon=[],
+                depth=plat_depth,
+                z_base=CAVITY_TOP + pocket_depth,
+                label=f"support platform — {cid}",
+                cylinder_r=plat_r,
+                cylinder_cx=cx,
+                cylinder_cy=cy,
+            ))
         _pinholes(comp, cat, cuts)
         return
     else:
@@ -412,12 +488,220 @@ def _internal_mount(
 
     cuts.append(Cutout(
         polygon=poly,
-        depth=cavity_depth,
+        depth=pocket_depth,
         z_base=CAVITY_TOP,
         label=f"body pocket — {cid}",
     ))
 
+    # Support platform — a wider, shallower pocket above the body
+    # pocket.  The resulting ledge supports the component at the
+    # correct Z height.
+    if body.shape == "rect":
+        plat_w = (body.width_mm  or 5.0) + 2 * margin + 2 * SUPPORT_PAD
+        plat_h = (body.length_mm or 5.0) + 2 * margin + 2 * SUPPORT_PAD
+        plat_poly = _rect(cx, cy, plat_w, plat_h)
+        if comp.rotation_deg:
+            plat_poly = _rotated(plat_poly, comp.rotation_deg, cx, cy)
+    else:
+        plat_poly = _rect(cx, cy,
+                          8.0 + 2 * margin + 2 * SUPPORT_PAD,
+                          8.0 + 2 * margin + 2 * SUPPORT_PAD)
+
+    plat_depth = SUPPORT_PLATFORM_H
+    if pocket_depth + plat_depth <= cavity_depth:
+        cuts.append(Cutout(
+            polygon=plat_poly,
+            depth=plat_depth,
+            z_base=CAVITY_TOP + pocket_depth,
+            label=f"support platform — {cid}",
+        ))
+
     _pinholes(comp, cat, cuts)
+
+
+# ── Side-mount components ──────────────────────────────────────────
+
+# Wall aperture clearance added around body dimensions.
+SIDE_APERTURE_CLR: float = 0.4
+
+def _side_mount(
+    comp: PlacedComponent,
+    cat: Component,
+    cuts: list[Cutout],
+    outline: Outline,
+    enclosure: Enclosure,
+    ceil_start: float,
+    cavity_depth: float,
+) -> None:
+    """Cutouts for side-mounted components (USB port, slide switch, etc.).
+
+    Creates:
+      1. A wall aperture piercing through the shell wall so the component
+         face is accessible from outside.
+      2. An internal body pocket for the component to sit in.
+      3. Pinholes for electrical connections.
+    """
+    cx, cy = comp.x_mm, comp.y_mm
+    cid = comp.instance_id
+    body = cat.body
+    margin = COMPONENT_MARGIN
+
+    body_w = body.width_mm or 5.0
+    body_l = body.length_mm or 5.0
+    body_h = body.height_mm
+
+    # Body pocket in the cavity (same as internal mount)
+    pocket_depth = min(body_h + margin, cavity_depth)
+    bw = body_w + 2 * margin
+    bh = body_l + 2 * margin
+    poly = _rect(cx, cy, bw, bh)
+    if comp.rotation_deg:
+        poly = _rotated(poly, comp.rotation_deg, cx, cy)
+    cuts.append(Cutout(
+        polygon=poly,
+        depth=pocket_depth,
+        z_base=CAVITY_TOP,
+        label=f"side-mount body — {cid}",
+    ))
+
+    # Wall aperture: a rectangular hole from outside through the shell wall.
+    # We find the nearest outline edge and extend the aperture outward.
+    if outline and outline.points:
+        _wall_aperture(comp, cat, cuts, outline, enclosure, ceil_start)
+
+    _pinholes(comp, cat, cuts)
+
+
+def _wall_aperture(
+    comp: PlacedComponent,
+    cat: Component,
+    cuts: list[Cutout],
+    outline: Outline,
+    enclosure: Enclosure,
+    ceil_start: float,
+) -> None:
+    """Create a rectangular wall aperture for a side-mount component.
+
+    Finds the nearest outline edge, then cuts a rectangular hole through
+    the wall at the component's position.
+    """
+    cx, cy = comp.x_mm, comp.y_mm
+    body = cat.body
+    body_w = body.width_mm or 5.0
+    body_h = body.height_mm
+
+    pts = [(p.x, p.y) for p in outline.points]
+    if len(pts) < 3:
+        return
+
+    # Find nearest edge and its direction
+    best_dist = float('inf')
+    best_mid = (cx, cy)
+    best_normal = (0.0, 1.0)
+
+    for i in range(len(pts)):
+        ax, ay = pts[i]
+        bx, by = pts[(i + 1) % len(pts)]
+        # Project component position onto edge segment
+        ex, ey = bx - ax, by - ay
+        seg_len = math.hypot(ex, ey)
+        if seg_len < 1e-6:
+            continue
+        ex /= seg_len
+        ey /= seg_len
+        t = max(0.0, min(seg_len, (cx - ax) * ex + (cy - ay) * ey))
+        foot_x = ax + t * ex
+        foot_y = ay + t * ey
+        dist = math.hypot(cx - foot_x, cy - foot_y)
+        if dist < best_dist:
+            best_dist = dist
+            best_mid = (foot_x, foot_y)
+            # Outward normal (assuming CCW outline)
+            best_normal = (ey, -ex)
+
+    # Aperture dimensions: component width wide, body height tall
+    aperture_w = body_w + 2 * SIDE_APERTURE_CLR
+    aperture_h = body_h + 2 * SIDE_APERTURE_CLR
+
+    # Aperture is centred on the nearest wall point, extending outward
+    # through the full shell wall thickness (enough to pierce)
+    wall_thick = 5.0  # generous wall pierce depth
+    nx, ny = best_normal
+    mid_x = best_mid[0] + nx * wall_thick / 2
+    mid_y = best_mid[1] + ny * wall_thick / 2
+
+    # Build the aperture rectangle aligned with the wall edge
+    # Direction along the wall
+    wall_dir_x, wall_dir_y = -ny, nx
+    hw = aperture_w / 2
+    hd = wall_thick / 2
+
+    poly = [
+        [mid_x - wall_dir_x * hw - nx * hd, mid_y - wall_dir_y * hw - ny * hd],
+        [mid_x + wall_dir_x * hw - nx * hd, mid_y + wall_dir_y * hw - ny * hd],
+        [mid_x + wall_dir_x * hw + nx * hd, mid_y + wall_dir_y * hw + ny * hd],
+        [mid_x - wall_dir_x * hw + nx * hd, mid_y - wall_dir_y * hw + ny * hd],
+    ]
+
+    # Z position: component sits on the cavity floor, aperture is at body height
+    z_base = CAVITY_TOP
+    depth = min(aperture_h, ceil_start - CAVITY_TOP + SURFACE_OVERSHOOT)
+    cuts.append(Cutout(
+        polygon=poly,
+        depth=depth,
+        z_base=z_base,
+        label=f"wall aperture — {comp.instance_id}",
+    ))
+
+
+# ── Sound holes ────────────────────────────────────────────────────
+
+
+def _sound_holes(
+    comp: PlacedComponent,
+    cat: Component,
+    cuts: list[Cutout],
+    outline: Outline,
+    enclosure: Enclosure,
+    ceil_start: float,
+) -> None:
+    """Grid of small holes in the ceiling above a speaker/buzzer."""
+    sh = cat.mounting.sound_holes
+    if not sh or not sh.enabled:
+        return
+
+    cx, cy = comp.x_mm, comp.y_mm
+    body = cat.body
+    hole_r = sh.hole_diameter_mm / 2
+    spacing = sh.hole_spacing_mm
+
+    # Determine the area to fill with holes
+    if body.shape == "circle":
+        cover_r = (body.diameter_mm or 10.0) / 2 - 1.0
+    else:
+        cover_r = min(body.width_mm or 10.0, body.length_mm or 10.0) / 2 - 1.0
+
+    dome_z = blended_height(cx, cy, outline, enclosure)
+    surface_depth = dome_z - ceil_start + SURFACE_OVERSHOOT
+
+    # Fill a grid of holes within the component's footprint radius
+    n = int(cover_r / spacing) + 1
+    for ix in range(-n, n + 1):
+        for iy in range(-n, n + 1):
+            hx = cx + ix * spacing
+            hy = cy + iy * spacing
+            dist = math.hypot(hx - cx, hy - cy)
+            if dist > cover_r:
+                continue
+            cuts.append(Cutout(
+                polygon=[],
+                depth=max(surface_depth, 1.0),
+                z_base=ceil_start,
+                label=f"sound hole — {comp.instance_id}",
+                cylinder_r=hole_r,
+                cylinder_cx=hx,
+                cylinder_cy=hy,
+            ))
 
 
 # ── Shared: pinholes ──────────────────────────────────────────────
@@ -428,12 +712,13 @@ def _pinholes(
     cat: Component,
     cuts: list[Cutout],
 ) -> None:
-    """Add press-fit shaft + taper pinholes for every pin on a component.
+    """Add press-fit shaft + graduated funnel pinholes for every pin.
 
-    The pinhole is a two-layer column:
+    The pinhole is a multi-layer column:
       • Shaft  (FLOOR_TOP → taper_z) — tight square for press-fit.
-      • Taper  (taper_z  → CAVITY_TOP) — wider square for guided insertion
-                                         and conductive-filament bridging.
+      • Funnel (taper_z  → CAVITY_TOP) — graduated steps from pin_d to
+        PINHOLE_TAPER_D, each step widening linearly.  The funnel
+        guides component insertion and lets conductive filament bridge in.
     """
     cx, cy = comp.x_mm, comp.y_mm
     rot = comp.rotation_deg
@@ -441,6 +726,8 @@ def _pinholes(
 
     shaft_h = (CAVITY_TOP - FLOOR_TOP) - PINHOLE_TAPER_DEPTH
     taper_z = FLOOR_TOP + shaft_h
+    n_steps = max(1, PINHOLE_FUNNEL_STEPS)
+    step_h = PINHOLE_TAPER_DEPTH / n_steps
 
     for pin in cat.pins:
         px_rel, py_rel = float(pin.position_mm[0]), float(pin.position_mm[1])
@@ -449,23 +736,48 @@ def _pinholes(
         px = cx + px_rel
         py = cy + py_rel
 
+        # Determine shaft dimensions based on pin shape
+        pin_shape = getattr(pin, "shape", "round")
+        clearance = PINHOLE_CLEARANCE
+
+        if pin_shape == "rect" and pin.shape_width_mm and pin.shape_length_mm:
+            shaft_w = pin.shape_width_mm + clearance
+            shaft_l = pin.shape_length_mm + clearance
+            # Apply rotation for rect/slot shapes
+            if rot in (90, 270):
+                shaft_w, shaft_l = shaft_l, shaft_w
+        elif pin_shape == "slot" and pin.shape_width_mm and pin.shape_length_mm:
+            shaft_w = pin.shape_width_mm + clearance
+            shaft_l = pin.shape_length_mm + clearance
+            if rot in (90, 270):
+                shaft_w, shaft_l = shaft_l, shaft_w
+        else:
+            # Round or default — square hole
+            pin_d = pin.hole_diameter_mm + clearance
+            shaft_w = pin_d
+            shaft_l = pin_d
+
         # Shaft — tight press-fit
-        pin_d = pin.hole_diameter_mm + PINHOLE_CLEARANCE
         cuts.append(Cutout(
-            polygon=_rect(px, py, pin_d, pin_d),
+            polygon=_rect(px, py, shaft_w, shaft_l),
             depth=shaft_h,
             z_base=FLOOR_TOP,
             label=f"pin {cid}:{pin.id}",
         ))
 
-        # Taper — wider entry funnel
-        taper_d = max(PINHOLE_TAPER_D, pin_d + 0.4)
-        cuts.append(Cutout(
-            polygon=_rect(px, py, taper_d, taper_d),
-            depth=PINHOLE_TAPER_DEPTH,
-            z_base=taper_z,
-            label=f"pin taper {cid}:{pin.id}",
-        ))
+        # Graduated funnel — N steps widening from shaft dims to taper dims
+        taper_w = max(PINHOLE_TAPER_D, shaft_w + 0.4)
+        taper_l = max(PINHOLE_TAPER_D, shaft_l + 0.4)
+        for step in range(n_steps):
+            t = (step + 1) / n_steps   # 0..1 for linear interpolation
+            dw = shaft_w + (taper_w - shaft_w) * t
+            dl = shaft_l + (taper_l - shaft_l) * t
+            cuts.append(Cutout(
+                polygon=_rect(px, py, dw, dl),
+                depth=step_h,
+                z_base=taper_z + step * step_h,
+                label=f"pin funnel {cid}:{pin.id}",
+            ))
 
 
 # ── Shared: trace channels ─────────────────────────────────────────

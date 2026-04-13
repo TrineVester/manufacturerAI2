@@ -199,8 +199,25 @@ export function buildSceneContent(data) {
     const shellGroup = buildEnclosureShell(expanded, expandedZ, enclosure, heightGrid, components, uiPos, cornerIndices);
     group.add(shellGroup);
 
-    // 2. PCB floor
-    group.add(buildPCBFloor(expanded));
+    // 2. PCB floor — use the wall's inset bottom-edge points so the floor
+    //    follows the actual wall footprint (accounts for bottom fillet/chamfer).
+    {
+        const N = expanded.length;
+        let cx = 0, cz = 0;
+        expanded.forEach(p => { cx += p[0]; cz += p[1]; });
+        cx /= N; cz /= N;
+        const floorPts = expanded.map((v, i) => {
+            const prof = _edgeProfile(expandedZ[i], enclosure.edge_bottom, enclosure.edge_top);
+            const off = prof[0].off;
+            if (off === 0) return [v[0], v[1]];
+            const dx = v[0] - cx, dz = v[1] - cz;
+            const dist = Math.hypot(dx, dz);
+            if (dist < 0.01) return [v[0], v[1]];
+            const f = Math.max(0, (dist - off)) / dist;
+            return [cx + dx * f, cz + dz * f];
+        });
+        group.add(buildPCBFloor(floorPts));
+    }
 
     // 3. Placed components
     const FLOOR_Z = 2;  // mm above PCB floor

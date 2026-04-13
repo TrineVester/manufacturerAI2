@@ -20,11 +20,14 @@ This module manages creation, loading, listing, and updating of sessions.
 from __future__ import annotations
 
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -40,9 +43,23 @@ class Session:
     description: str = ""
     name: str = ""                       # LLM-generated friendly name
     pipeline_state: dict = field(default_factory=dict)  # stage -> status
+    pipeline_errors: dict = field(default_factory=dict)  # stage -> {error, reason}
+    version: int = 0                     # increments on every save()
+    _batch_depth: int = field(default=0, repr=False)  # nesting depth for batch_update
 
     def save(self) -> None:
-        """Persist session metadata to session.json."""
+        """Persist session metadata to session.json.
+
+        Inside a ``batch_update()`` context, this is deferred until the
+        outermost context exits.  Outside of one it writes immediately.
+        """
+        if self._batch_depth > 0:
+            return  # deferred — batch_update __exit__ will call _do_save
+        self._do_save()
+
+    def _do_save(self) -> None:
+        """Unconditionally write session.json to disk."""
+        self.version += 1
         self.last_modified = datetime.now(timezone.utc).isoformat()
         self.path.mkdir(parents=True, exist_ok=True)
         meta = {
@@ -52,16 +69,35 @@ class Session:
             "description": self.description,
             "name": self.name,
             "pipeline_state": self.pipeline_state,
+            "pipeline_errors": self.pipeline_errors,
+            "version": self.version,
         }
         (self.path / "session.json").write_text(
             json.dumps(meta, indent=2), encoding="utf-8")
 
+    def batch_update(self):
+        """Context manager that defers ``save()`` calls until exit.
+
+        Usage::
+
+            with session.batch_update():
+                session.pipeline_state["placement"] = "complete"
+                session.write_artifact("placement.json", data)
+                session.save()  # no-op inside batch
+            # single save() happens here
+        """
+        return _BatchUpdate(self)
+
     def write_artifact(self, filename: str, data: Any) -> Path:
-        """Write a JSON artifact to the session folder."""
+        """Write a JSON artifact to the session folder.
+
+        NOTE: Does NOT auto-save session.json.  Callers must call
+        ``save()`` explicitly after all artifact writes are complete
+        to keep session metadata in sync with artifact files.
+        """
         p = self.path / filename
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-        self.save()  # update last_modified
         return p
 
     def read_artifact(self, filename: str) -> Any | None:
@@ -81,6 +117,31 @@ class Session:
             p.unlink()
             return True
         return False
+
+    def record_error(self, stage: str, error: str, reason: str = "") -> None:
+        """Record a structured pipeline error for *stage*."""
+        self.pipeline_errors[stage] = {"error": error, "reason": reason}
+
+    def clear_error(self, stage: str) -> None:
+        """Remove a recorded error for *stage*."""
+        self.pipeline_errors.pop(stage, None)
+
+
+class _BatchUpdate:
+    """Context manager returned by :meth:`Session.batch_update`."""
+
+    def __init__(self, session: Session):
+        self._session = session
+
+    def __enter__(self):
+        self._session._batch_depth += 1
+        return self._session
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self._session._batch_depth -= 1
+        if self._session._batch_depth == 0:
+            self._session._do_save()
+        return False  # don't suppress exceptions
 
 
 def _generate_session_id() -> str:
@@ -121,15 +182,21 @@ def load_session(session_id: str) -> Session | None:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
-    return Session(
-        id=meta["id"],
-        path=path,
-        created=meta["created"],
-        last_modified=meta["last_modified"],
-        description=meta.get("description", ""),
-        name=meta.get("name", ""),
-        pipeline_state=meta.get("pipeline_state", {}),
-    )
+    try:
+        return Session(
+            id=meta["id"],
+            path=path,
+            created=meta["created"],
+            last_modified=meta["last_modified"],
+            description=meta.get("description", ""),
+            name=meta.get("name", ""),
+            pipeline_state=meta.get("pipeline_state", {}),
+            pipeline_errors=meta.get("pipeline_errors", {}),
+            version=meta.get("version", 0),
+        )
+    except (KeyError, TypeError) as e:
+        log.warning("Corrupted session.json for %s: %s", session_id, e)
+        return None
 
 
 def list_sessions() -> list[dict]:
@@ -152,7 +219,10 @@ def list_sessions() -> list[dict]:
                 "description": meta.get("description", ""),
                 "name": meta.get("name", ""),
                 "pipeline_state": meta.get("pipeline_state", {}),
+                "pipeline_errors": meta.get("pipeline_errors", {}),
+                "version": meta.get("version", 0),
             })
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, OSError, KeyError, TypeError) as e:
+            log.warning("Skipping corrupted session %s: %s", d.name, e)
             continue
     return sessions

@@ -5,9 +5,9 @@
     "ui_placement": true,
     "body": {
         "shape": "rect",
-        "width_mm": 6.0,
-        "length_mm": 6.0,
-        "height_mm": 3.5
+        "width_mm": 10,
+        "length_mm": 8,
+        "height_mm": 3.3
     },
     "mounting": {
         "style": "top",
@@ -19,61 +19,94 @@
         "cap": {
             "diameter_mm": 9.0,
             "height_mm": 4.0,
-            "hole_clearance_mm": 0.4
-        }
+            "hole_clearance_mm": 0.4,
+            "actuator": {
+                "total_height_mm": 4.7,
+                "base_height_mm": 3.49,
+                "cylinder_height_mm": 1.21,
+                "cylinder_diameter_mm": 3.4
+            }
+        },
+        "extras": [
+            {
+                "label": "button",
+                "shape": "button"
+            }
+        ]
     },
+    "pin_length_mm": 3.7,
     "pins": [
         {
             "id": "1",
             "label": "A1",
             "position_mm": [
-                -3.25,
-                -2.5
+                -3.5,
+                -2.205
             ],
             "direction": "bidirectional",
             "voltage_v": null,
             "current_max_ma": 50,
-            "hole_diameter_mm": 1.0,
-            "description": "Side A, pin 1. Internally shorted to pin 2."
+            "hole_diameter_mm": 0.75,
+            "description": "Side A, pin 1. Internally shorted to pin 2.",
+            "shape": {
+                "type": "rect",
+                "width_mm": 0.75,
+                "length_mm": 0.3
+            }
         },
         {
             "id": "2",
             "label": "A2",
             "position_mm": [
-                3.25,
-                -2.5
+                3.5,
+                -2.205
             ],
             "direction": "bidirectional",
             "voltage_v": null,
             "current_max_ma": 50,
-            "hole_diameter_mm": 1.0,
-            "description": "Side A, pin 2. Internally shorted to pin 1."
+            "hole_diameter_mm": 0.75,
+            "description": "Side A, pin 2. Internally shorted to pin 1.",
+            "shape": {
+                "type": "rect",
+                "width_mm": 0.75,
+                "length_mm": 0.3
+            }
         },
         {
             "id": "3",
             "label": "B1",
             "position_mm": [
-                -3.25,
-                2.5
+                -3.5,
+                2.205
             ],
             "direction": "bidirectional",
             "voltage_v": null,
             "current_max_ma": 50,
-            "hole_diameter_mm": 1.0,
-            "description": "Side B, pin 1. Internally shorted to pin 4."
+            "hole_diameter_mm": 0.75,
+            "description": "Side B, pin 1. Internally shorted to pin 4.",
+            "shape": {
+                "type": "rect",
+                "width_mm": 0.75,
+                "length_mm": 0.3
+            }
         },
         {
             "id": "4",
             "label": "B2",
             "position_mm": [
-                3.25,
-                2.5
+                3.5,
+                2.205
             ],
             "direction": "bidirectional",
             "voltage_v": null,
             "current_max_ma": 50,
-            "hole_diameter_mm": 1.0,
-            "description": "Side B, pin 2. Internally shorted to pin 3."
+            "hole_diameter_mm": 0.75,
+            "description": "Side B, pin 2. Internally shorted to pin 3.",
+            "shape": {
+                "type": "rect",
+                "width_mm": 0.75,
+                "length_mm": 0.3
+            }
         }
     ],
     "internal_nets": [

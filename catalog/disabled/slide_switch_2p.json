@@ -10,7 +10,7 @@
         "height_mm": 4.0
     },
     "mounting": {
-        "style": "side",
+        "style": "top",
         "allowed_styles": [
             "top",
             "side"
@@ -22,42 +22,49 @@
         {
             "id": "A",
             "label": "Position A",
-            "position_mm": [
-                -2.5,
-                0
-            ],
+            "position_mm": [-2.5, 0],
             "direction": "bidirectional",
             "voltage_v": null,
             "current_max_ma": 300,
             "hole_diameter_mm": 1.0,
-            "description": "Throw A. Connected to common when switch is in position A."
+            "shape": { "type": "rect", "width_mm": 1.0, "length_mm": 0.5 },
+            "description": "Throw A. Flat blade pin. Connected to common when switch is in position A."
         },
         {
             "id": "C",
             "label": "Common",
-            "position_mm": [
-                0,
-                0
-            ],
+            "position_mm": [0, 0],
             "direction": "bidirectional",
             "voltage_v": null,
             "current_max_ma": 300,
             "hole_diameter_mm": 1.0,
-            "description": "Common terminal. Always connected to one of the throws."
+            "shape": { "type": "rect", "width_mm": 1.0, "length_mm": 0.5 },
+            "description": "Common terminal. Flat blade pin. Always connected to one of the throws."
         },
         {
             "id": "B",
             "label": "Position B",
-            "position_mm": [
-                2.5,
-                0
-            ],
+            "position_mm": [2.5, 0],
             "direction": "bidirectional",
             "voltage_v": null,
             "current_max_ma": 300,
             "hole_diameter_mm": 1.0,
-            "description": "Throw B. Connected to common when switch is in position B."
+            "shape": { "type": "rect", "width_mm": 1.0, "length_mm": 0.5 },
+            "description": "Throw B. Flat blade pin. Connected to common when switch is in position B."
         }
     ],
-    "internal_nets": []
+    "internal_nets": [],
+    "scad": {
+        "features": [
+            {
+                "shape": "rect",
+                "label": "lever travel slot",
+                "position_mm": [0, -1.75],
+                "width_mm": 6.0,
+                "length_mm": 2.0,
+                "depth_mm": 2.5,
+                "z_anchor": "cavity_start"
+            }
+        ]
+    }
 }
