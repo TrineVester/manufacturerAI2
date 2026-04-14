@@ -6,3 +6,4 @@ outputs/
 .DS_Store
 .env
 firmware/templates/
+udkast.txt

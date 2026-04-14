@@ -1089,6 +1089,14 @@ async def api_circuit(request: Request, session: str = Query(...)):
     )
 
 
+@app.get("/api/session/circuit/conversation")
+async def api_circuit_conversation(session: str = Query(...)):
+    """Return the saved circuit conversation history for a session."""
+    s = _resolve_session(session)
+    data = s.read_artifact("circuit_conversation.json")
+    return data if isinstance(data, list) else []
+
+
 @app.get("/api/session/circuit/result")
 async def api_circuit_result(session: str = Query(...)):
     """Return the design with circuit data, if circuit stage is complete."""

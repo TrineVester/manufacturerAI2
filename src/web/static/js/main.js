@@ -5,6 +5,7 @@ import { closeModal } from './utils.js';
 import { setSessionLabel, startNewSession, showSessionsModal, setSessionUrl } from './session.js';
 import { loadCatalog, reloadCatalog } from './catalog.js';
 import { sendDesignPrompt, loadConversation } from './design.js';
+import { sendCircuitPrompt, loadCircuitConversation, enableCircuitTab } from './circuit.js';
 import { runPlacement, loadPlacementResult, enablePlacementTab } from './placement.js';
 import { runRouting, loadRoutingResult, enableRoutingTab } from './routing.js';
 import { runScad, loadScadResult, enableScadTab } from './scad.js';
@@ -26,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (state.session) {
         setSessionLabel(state.session);
         loadConversation();
+        loadCircuitConversation();
         loadPlacementResult();    // load existing placement if present
         loadRoutingResult();      // load existing routing if present
         loadScadResult();         // load existing SCAD if present
@@ -42,7 +44,11 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .then(data => {
                 if (data?.name) setSessionLabel(state.session, data.name);
-                // Enable placement nav if design is complete
+                // Enable circuit nav if design is complete
+                if (data?.artifacts?.design) {
+                    enableCircuitTab(!data?.artifacts?.circuit_conversation);
+                }
+                // Enable placement nav if circuit is complete (or design if no circuit)
                 if (data?.artifacts?.design) {
                     enablePlacementTab(!data?.artifacts?.placement);
                 }
@@ -147,6 +153,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
             sendDesignPrompt();
+        }
+    });
+
+    // Circuit chat
+    document.getElementById('btn-send-circuit').addEventListener('click', sendCircuitPrompt);
+    document.getElementById('circuit-chat-input').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendCircuitPrompt();
         }
     });
 

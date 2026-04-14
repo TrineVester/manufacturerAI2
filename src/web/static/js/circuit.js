@@ -1,84 +1,51 @@
-/* Design tab — chat interface for the LLM design agent (SSE streaming) */
+/* Circuit tab — chat interface for the LLM circuit agent (SSE streaming) */
 
 import { API, state } from './state.js';
-import { onSessionCreated, setSessionLabel } from './session.js';
-import { setData as setViewportData, clearData as clearViewportData } from './viewport.js';
+import { setData as setViewportData } from './viewport.js';
 import { enablePlacementTab, resetPlacementPanel } from './placement.js';
 import { resetRoutingPanel } from './routing.js';
-import { enableCircuitTab, resetCircuitPanel } from './circuit.js';
 import { getSelectedModel } from './theme.js';
 
-const messagesDiv = () => document.getElementById('chat-messages');
-const statusSpan = () => document.getElementById('design-status');
-let _isSending = false;  // Guard against double-submit
+const messagesDiv = () => document.getElementById('circuit-chat-messages');
+const statusSpan  = () => document.getElementById('circuit-status');
+let _isSending = false;
 
 // ── Load conversation history ─────────────────────────────────────
 
-/** Load and render saved conversation for the current session. */
-export async function loadConversation() {
+export async function loadCircuitConversation() {
     const container = messagesDiv();
     if (!container) return;
     container.innerHTML = '';
-
     if (!state.session) return;
 
     try {
         const res = await fetch(
-            `${API}/api/session/conversation?session=${encodeURIComponent(state.session)}`
+            `${API}/api/session/circuit/conversation?session=${encodeURIComponent(state.session)}`
         );
         if (!res.ok) return;
         const messages = await res.json();
         if (!Array.isArray(messages) || messages.length === 0) return;
-
         renderConversation(messages);
-    } catch {
-        // Silently ignore — empty chat is fine
-    }
+    } catch { /* empty chat is fine */ }
 
-    // Fetch current token count and update the meter
-    if (state.session) {
-        try {
-            const res = await fetch(`${API}/api/session/tokens?session=${encodeURIComponent(state.session)}`);
-            if (res.ok) {
-                const t = await res.json();
-                updateTokenMeter(t.input_tokens, t.budget);
-            }
-        } catch { /* best-effort */ }
-    }
+    // Load existing circuit result if present
+    loadCircuitResult();
 }
 
-/**
- * Render a saved Anthropic-format message list into the chat UI.
- * Produces the same DOM structure as the live SSE stream.
- */
 function renderConversation(messages) {
     for (const msg of messages) {
         if (msg.role === 'user') {
             if (typeof msg.content === 'string') {
                 appendMessage('user', msg.content);
             }
-            // tool_result arrays — render as grouped results
-            if (Array.isArray(msg.content)) {
-                const toolResults = msg.content.filter(b => b.type === 'tool_result');
-                if (toolResults.length > 0) {
-                    // Results are rendered inline with the preceding tool group
-                    // (already done via appendToolCallStatic marking ✓)
-                }
-            }
         } else if (msg.role === 'assistant') {
             renderAssistantBlocks(msg.content);
         }
     }
-
-    // If a design was completed, show the design result at the bottom
-    loadDesignResult();
 }
 
-/** Render an array of content blocks (thinking, text, tool_use). */
 function renderAssistantBlocks(blocks) {
     if (!Array.isArray(blocks)) return;
-
-    // Group tool_use blocks together
     let toolItems = [];
 
     const flushToolItems = () => {
@@ -123,48 +90,54 @@ function renderAssistantBlocks(blocks) {
     flushToolItems();
 }
 
-/** If this session has a design.json, render the design result box */
-async function loadDesignResult() {
+async function loadCircuitResult() {
     if (!state.session) return;
     try {
         const res = await fetch(
-            `${API}/api/session/design/result?session=${encodeURIComponent(state.session)}`
+            `${API}/api/session/circuit/result?session=${encodeURIComponent(state.session)}`
         );
         if (!res.ok) return;
         const design = await res.json();
         if (design && design.components) {
-            appendDesignResult(design);
+            appendCircuitResult(design);
             setViewportData('design', design);
-            // Enable placement tab since design exists
-            enablePlacementTab();
         }
-    } catch {
-        // No design yet — that's fine
-    }
+    } catch { /* no circuit yet */ }
 }
 
-/** Send a design prompt and stream SSE events */
-export async function sendDesignPrompt() {
-    const input = document.getElementById('chat-input');
-    const prompt = input.value.trim();
-    if (!prompt || _isSending) return;
+// ── Enable / disable ──────────────────────────────────────────────
 
+export function enableCircuitTab(flash = false) {
+    const btn = document.querySelector('#pipeline-nav .step[data-step="circuit"]');
+    if (!btn) return;
+    btn.disabled = false;
+    btn.classList.toggle('tab-flash', flash);
+}
+
+export function resetCircuitPanel() {
+    const container = messagesDiv();
+    if (container) container.innerHTML = '';
+    const s = statusSpan();
+    if (s) s.textContent = '';
+}
+
+// ── Send prompt ───────────────────────────────────────────────────
+
+export async function sendCircuitPrompt() {
+    const input = document.getElementById('circuit-chat-input');
+    const prompt = input.value.trim();
+    if (_isSending) return;
+    // Allow empty prompt — server auto-generates from design context
     _isSending = true;
 
-    // Show user message and clear input
-    appendMessage('user', prompt);
+    if (prompt) appendMessage('user', prompt);
     input.value = '';
     input.disabled = true;
-    document.getElementById('btn-send-design').disabled = true;
+    document.getElementById('btn-send-circuit').disabled = true;
     statusSpan().textContent = 'Connecting…';
 
     try {
-        // Build URL — session param is optional (server auto-creates if missing)
-        let url = `${API}/api/session/design`;
-        if (state.session) {
-            url += `?session=${encodeURIComponent(state.session)}`;
-        }
-
+        const url = `${API}/api/session/circuit?session=${encodeURIComponent(state.session)}`;
         const response = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -183,40 +156,32 @@ export async function sendDesignPrompt() {
     } finally {
         _isSending = false;
         input.disabled = false;
-        document.getElementById('btn-send-design').disabled = false;
+        document.getElementById('btn-send-circuit').disabled = false;
         statusSpan().textContent = '';
     }
 }
 
 // ── SSE parser ────────────────────────────────────────────────────
 
-/**
- * Parse an SSE stream from a fetch Response.
- * We use fetch + ReadableStream instead of EventSource because
- * EventSource only supports GET requests.
- */
 async function consumeSSE(response) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
 
-    // Track current live-updating elements
-    let thinkingPre = null;   // <pre> inside the thinking bubble
-    let messageBubble = null; // <div> for the assistant text bubble
-    let messageBubbleText = ''; // raw text buffer for markdown re-rendering
-    let currentBlock = null;  // 'thinking' | 'message' | null
-    let toolGroup = null;     // current tool group <details> element
-    let toolGroupItems = null; // container for tool items inside the group
+    let thinkingPre = null;
+    let messageBubble = null;
+    let messageBubbleText = '';
+    let currentBlock = null;
+    let toolGroup = null;
+    let toolGroupItems = null;
 
     while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
-
-        // SSE messages are separated by double newlines
         const parts = buffer.split('\n\n');
-        buffer = parts.pop(); // last part is incomplete
+        buffer = parts.pop();
 
         for (const part of parts) {
             if (!part.trim()) continue;
@@ -239,13 +204,7 @@ async function consumeSSE(response) {
                 try { data = JSON.parse(dataStr); } catch { data = {}; }
             }
 
-            // ── Handle each event type ──
-
             switch (eventType) {
-                case 'session_created':
-                    onSessionCreated(data.session_id);
-                    break;
-
                 case 'thinking_start':
                     currentBlock = 'thinking';
                     toolGroup = null;
@@ -279,9 +238,8 @@ async function consumeSSE(response) {
                     break;
 
                 case 'block_stop':
-                    if (currentBlock === 'thinking') {
-                        thinkingPre = null;
-                    } else if (currentBlock === 'message') {
+                    if (currentBlock === 'thinking') thinkingPre = null;
+                    else if (currentBlock === 'message') {
                         messageBubble = null;
                         messageBubbleText = '';
                     }
@@ -307,18 +265,13 @@ async function consumeSSE(response) {
                     break;
 
                 case 'design':
-                    appendDesignResult(data.design);
+                    appendCircuitResult(data.design);
                     setViewportData('design', data.design);
-                    statusSpan().textContent = 'Design complete!';
-                    // Enable circuit step now that design exists
-                    enableCircuitTab(true);
-                    // Also enable placement (can skip circuit)
+                    statusSpan().textContent = 'Circuit complete!';
+                    // Enable placement step, invalidate downstream
                     enablePlacementTab(true);
-                    // Invalidate downstream
-                    resetCircuitPanel();
                     resetPlacementPanel();
                     resetRoutingPanel();
-                    // Disable routing tab until new placement
                     {
                         const rBtn = document.querySelector('#pipeline-nav .step[data-step="routing"]');
                         if (rBtn) { rBtn.disabled = true; rBtn.classList.remove('tab-flash'); }
@@ -330,30 +283,7 @@ async function consumeSSE(response) {
                     statusSpan().textContent = 'Error';
                     break;
 
-                case 'session_named':
-                    if (data.name && state.session) {
-                        setSessionLabel(state.session, data.name);
-                    }
-                    break;
-
-                case 'token_usage':
-                    updateTokenMeter(data.input_tokens, data.budget);
-                    break;
-
-                case 'done': {
-                    // Refresh token count from server after turn completes
-                    // (includes any tool_result messages appended after last count)
-                    if (state.session) {
-                        fetch(`${API}/api/session/tokens?session=${encodeURIComponent(state.session)}`)
-                            .then(r => r.ok ? r.json() : null)
-                            .then(t => { if (t) updateTokenMeter(t.input_tokens, t.budget); })
-                            .catch(() => {});
-                    }
-                    break;
-                }
-
                 case 'done':
-                    statusSpan().textContent = 'Done';
                     break;
             }
         }
@@ -370,7 +300,6 @@ function appendMessage(role, text) {
     scrollToBottom();
 }
 
-/** Create an empty thinking bubble and return the <pre> for delta appending */
 function createThinkingBubble(open = true) {
     const div = document.createElement('div');
     div.className = 'chat-bubble thinking';
@@ -388,7 +317,6 @@ function createThinkingBubble(open = true) {
     return pre;
 }
 
-/** Create an empty assistant message bubble and return it for delta appending */
 function createMessageBubble() {
     const div = document.createElement('div');
     div.className = 'chat-bubble assistant';
@@ -397,7 +325,6 @@ function createMessageBubble() {
     return div;
 }
 
-/** Create a tool group container (collapsed <details>) and return refs */
 function createToolGroup() {
     const div = document.createElement('div');
     div.className = 'chat-bubble tool-group';
@@ -415,7 +342,6 @@ function createToolGroup() {
     return { details, items };
 }
 
-/** Add a tool call entry inside a tool group */
 function appendToolItem(container, name, input) {
     const item = document.createElement('div');
     item.className = 'tool-item';
@@ -425,26 +351,20 @@ function appendToolItem(container, name, input) {
         : '()';
     item.innerHTML = `<span class="tool-name">${escapeHtml(name)}</span>${escapeHtml(inputStr)}`;
     container.appendChild(item);
-
-    // Update summary count
     const summary = container.parentElement.querySelector('.tool-group-header');
     const count = container.children.length;
     summary.innerHTML = `<span class="tool-icon">🔧</span> ${count} tool call${count > 1 ? 's' : ''}`;
     scrollToBottom();
 }
 
-/** Append a result line to the most recent matching tool item */
-function appendToolItemResult(container, name, content) {
-    // Find the last tool item for this name
+function appendToolItemResult(container, name) {
     const items = container.querySelectorAll(`.tool-item[data-tool-name="${name}"]`);
     const item = items[items.length - 1];
     if (!item) return;
-    // Mark as done
     const nameSpan = item.querySelector('.tool-name');
     if (nameSpan) nameSpan.textContent = `✓ ${name}`;
 }
 
-/** Render tool calls from saved conversation (static, not streaming) */
 function appendToolCallStatic(name, input) {
     const item = document.createElement('div');
     item.className = 'tool-item';
@@ -455,21 +375,18 @@ function appendToolCallStatic(name, input) {
     return item;
 }
 
-function appendDesignResult(design) {
+function appendCircuitResult(design) {
     const div = document.createElement('div');
     div.className = 'chat-bubble design-result';
-
     const compCount = design.components?.length || 0;
     const netCount = design.nets?.length || 0;
-    const vertCount = (Array.isArray(design.outline) ? design.outline : design.outline?.vertices)?.length || 0;
-
     div.innerHTML = `
         <div class="design-summary">
-            <strong>✅ Design Validated</strong>
-            <span>${compCount} components · ${netCount} nets · ${vertCount}-vertex outline</span>
+            <strong>✅ Circuit Complete</strong>
+            <span>${compCount} components · ${netCount} nets</span>
         </div>
         <details>
-            <summary>View design JSON</summary>
+            <summary>View circuit JSON</summary>
             <pre class="design-json">${escapeHtml(JSON.stringify(design, null, 2))}</pre>
         </details>
     `;
@@ -479,24 +396,17 @@ function appendDesignResult(design) {
 
 function scrollToBottom() {
     const container = messagesDiv();
+    if (!container) return;
     const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 40;
     if (atBottom) container.scrollTop = container.scrollHeight;
 }
 
-// ── Markdown renderer (lightweight, XSS-safe) ─────────────────────
+// ── Markdown renderer (same lightweight approach as design.js) ────
 
-/**
- * Convert a subset of Markdown to safe HTML.
- * Handles: headings, **bold**, *italic*, `code`, ```code blocks```,
- * - unordered lists, 1. ordered lists, blank line breaks.
- */
 function renderMarkdown(text) {
     const lines = text.split('\n');
     const out = [];
-    let inUl = false;
-    let inOl = false;
-    let inCode = false;
-    let codeLang = '';
+    let inUl = false, inOl = false, inCode = false;
     let codeLines = [];
 
     const closeUl = () => { if (inUl) { out.push('</ul>'); inUl = false; } };
@@ -504,80 +414,29 @@ function renderMarkdown(text) {
     const closeLists = () => { closeUl(); closeOl(); };
 
     for (const line of lines) {
-        // Fenced code blocks
         if (/^```/.test(line)) {
             if (inCode) {
-                // Close code block
                 out.push(`<pre class="md-code-block"><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
-                inCode = false;
-                codeLines = [];
-                codeLang = '';
-            } else {
-                closeLists();
-                inCode = true;
-                codeLang = line.slice(3).trim();
-                codeLines = [];
-            }
+                inCode = false; codeLines = [];
+            } else { closeLists(); inCode = true; codeLines = []; }
             continue;
         }
-        if (inCode) {
-            codeLines.push(line);
-            continue;
-        }
-
-        // Headings
-        const headingMatch = line.match(/^(#{1,4})\s+(.+)/);
-        if (headingMatch) {
-            closeLists();
-            const level = headingMatch[1].length;
-            // Render as h4-h6 to stay smaller than panel headings
-            const tag = `h${Math.min(level + 3, 6)}`;
-            out.push(`<${tag} class="md-heading">${inlineMarkdown(headingMatch[2])}</${tag}>`);
-            continue;
-        }
-
-        // Unordered list
-        if (/^[-*] /.test(line)) {
-            closeOl();
-            if (!inUl) { out.push('<ul>'); inUl = true; }
-            out.push(`<li>${inlineMarkdown(line.slice(2))}</li>`);
-            continue;
-        }
-
-        // Ordered list
-        const olMatch = line.match(/^(\d+)[.)]\s+(.+)/);
-        if (olMatch) {
-            closeUl();
-            if (!inOl) { out.push('<ol>'); inOl = true; }
-            out.push(`<li>${inlineMarkdown(olMatch[2])}</li>`);
-            continue;
-        }
-
-        // Default: paragraph or blank line
+        if (inCode) { codeLines.push(line); continue; }
+        const hm = line.match(/^(#{1,4})\s+(.+)/);
+        if (hm) { closeLists(); const tag = `h${Math.min(hm[1].length + 3, 6)}`; out.push(`<${tag} class="md-heading">${inlineMarkdown(hm[2])}</${tag}>`); continue; }
+        if (/^[-*] /.test(line)) { closeOl(); if (!inUl) { out.push('<ul>'); inUl = true; } out.push(`<li>${inlineMarkdown(line.slice(2))}</li>`); continue; }
+        const olm = line.match(/^(\d+)[.)]\s+(.+)/);
+        if (olm) { closeUl(); if (!inOl) { out.push('<ol>'); inOl = true; } out.push(`<li>${inlineMarkdown(olm[2])}</li>`); continue; }
         closeLists();
-        if (line.trim() === '') {
-            out.push('<br>');
-        } else {
-            out.push(`<p>${inlineMarkdown(line)}</p>`);
-        }
+        if (line.trim() === '') out.push('<br>'); else out.push(`<p>${inlineMarkdown(line)}</p>`);
     }
-
-    // Close any open blocks
-    if (inCode && codeLines.length) {
-        out.push(`<pre class="md-code-block"><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
-    }
+    if (inCode && codeLines.length) out.push(`<pre class="md-code-block"><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
     closeLists();
     return out.join('');
 }
 
 function inlineMarkdown(raw) {
-    // Escape HTML first to prevent XSS
-    const esc = raw
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
-    // Then apply inline patterns
-    return esc
+    return raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
         .replace(/\*(.+?)\*/g, '<em>$1</em>')
         .replace(/`(.+?)`/g, '<code>$1</code>');
@@ -587,28 +446,4 @@ function escapeHtml(text) {
     const el = document.createElement('div');
     el.textContent = text;
     return el.innerHTML;
-}
-
-// ── Token meter ───────────────────────────────────────────────────
-
-function updateTokenMeter(inputTokens, budget) {
-    const meter = document.getElementById('token-meter');
-    const fill = meter?.querySelector('.token-pie-fill');
-    const label = document.getElementById('token-label');
-    if (!meter || !fill || !label) return;
-
-    meter.hidden = false;
-
-    const pct = Math.min(inputTokens / budget, 1);
-    const dashLen = (pct * 100).toFixed(1);
-    fill.setAttribute('stroke-dasharray', `${dashLen} 100`);
-
-    // Color thresholds
-    fill.classList.remove('warn', 'critical');
-    if (pct >= 0.9) fill.classList.add('critical');
-    else if (pct >= 0.7) fill.classList.add('warn');
-
-    const usedK = (inputTokens / 1000).toFixed(1);
-    const budgetK = (budget / 1000).toFixed(0);
-    label.textContent = `${usedK}k / ${budgetK}k`;
 }
