@@ -1,67 +1,81 @@
-"""emit.py — assemble shell-body lines and cutouts into a .scad file string.
+"""emit.py — assemble shell-body lines and ScadFragments into a .scad file.
 
-The final SCAD structure is::
-
-    // header
-    $fn = 32;
+The final SCAD structure::
 
     difference() {
-        // ─── Shell body ───
-        union() { ... }          // from layers.shell_body_lines()
-
-        // ─── Cutouts ──────
-        translate([0,0,z])       // one block per Cutout
-            linear_extrude(h)
-                polygon(...);
+        union() {
+            // shell body
+            // addition fragments
+        }
+        // cutout fragments (merged by z-layer)
     }
-
-When the cutout list is empty the ``difference()`` wrapper is omitted and the
-shell body union is emitted directly (no unnecessary CSG overhead in OpenSCAD).
 """
 
 from __future__ import annotations
 
+import math
 import logging
 from collections import defaultdict
 from datetime import datetime
 
 from shapely.geometry import MultiPolygon as _SMultiPoly
+from shapely.geometry import Point as _SPoint
 from shapely.geometry import Polygon as _SPoly
 from shapely.ops import unary_union
 
-from .cutouts import Cutout
+from .fragment import (
+    ScadFragment, RectGeometry, CylinderGeometry,
+    PolygonGeometry, SegmentGeometry, CapsuleGeometry,
+)
 
 log = logging.getLogger(__name__)
 
 
-# ── Helpers ────────────────────────────────────────────────────────
+# ── Geometry → polygon conversion ─────────────────────────────────
 
 
-def _poly_str(pts: list) -> str:
-    """Format [[x,y],...] as an OpenSCAD points literal."""
-    return ", ".join(f"[{float(x):.3f}, {float(y):.3f}]" for x, y in pts)
+def _cylinder_to_polygon(cg: CylinderGeometry, fn: int = 16) -> list[list[float]]:
+    """Approximate a cylinder as a regular polygon with *fn* sides."""
+    return [
+        [cg.cx + cg.r * math.cos(2 * math.pi * i / fn),
+         cg.cy + cg.r * math.sin(2 * math.pi * i / fn)]
+        for i in range(fn)
+    ]
 
 
-def _indent(lines: list[str], prefix: str) -> list[str]:
-    return [prefix + line for line in lines]
+def _capsule_to_polygon(cg: CapsuleGeometry, fn: int = 16) -> list[list[float]]:
+    """Approximate hulled two-circle capsule as a polygon via Shapely."""
+    c1 = _SPoint(cg.x1, cg.y1).buffer(cg.r1, resolution=fn // 4)
+    c2 = _SPoint(cg.x2, cg.y2).buffer(cg.r2, resolution=fn // 4)
+    hull = c1.union(c2).convex_hull
+    coords = list(hull.exterior.coords)[:-1]
+    return [[x, y] for x, y in coords]
 
 
-# ── Shapely cutout merging ─────────────────────────────────────────
+def _fragment_to_polygon(frag: ScadFragment) -> list[list[float]] | None:
+    """Convert a fragment's geometry to a polygon point list."""
+    g = frag.geometry
+    if isinstance(g, CylinderGeometry):
+        return _cylinder_to_polygon(g)
+    if isinstance(g, CapsuleGeometry):
+        return _capsule_to_polygon(g)
+    if isinstance(g, RectGeometry):
+        return g.to_polygon()
+    if isinstance(g, SegmentGeometry):
+        return g.to_polygon()
+    if isinstance(g, PolygonGeometry):
+        return g.points
+    return None
 
 
-def _merge_polygon_cutouts(
-    cutouts: list[Cutout],
+# ── Shapely merge (same z-layer optimization) ─────────────────────
+
+
+def _merge_polygon_fragments(
+    fragments: list[ScadFragment],
     outline_pts: list[list[float]] | None,
 ) -> list[tuple[str, list[str]]]:
-    """Group polygon cutouts by (z_base, depth), merge with Shapely unary_union,
-    simplify vertices, clip to the enclosure outline, and return as OpenSCAD
-    multi-path polygon lines.
-
-    Returns a list of (comment_line, scad_lines) tuples — one per z/depth group.
-    This typically reduces 150-200 individual difference() children down to 4-5,
-    which is the primary factor in OpenSCAD CGAL compile time.
-    """
-    # Build outline clip polygon once
+    """Group polygon fragments by (z_base, depth), merge, clip, simplify."""
     outline_poly: _SPoly | None = None
     if outline_pts and len(outline_pts) >= 3:
         try:
@@ -70,29 +84,31 @@ def _merge_polygon_cutouts(
         except Exception:
             pass
 
-    # Group by (z_base, depth) — round to 3 dp to treat near-identical values as equal
-    groups: dict[tuple[float, float], list[Cutout]] = defaultdict(list)
-    for cut in cutouts:
-        key = (round(cut.z_base, 3), round(cut.depth, 3))
-        groups[key].append(cut)
+    groups: dict[tuple[float, float], list[ScadFragment]] = defaultdict(list)
+    for f in fragments:
+        key = (round(f.z_base, 3), round(f.depth, 3))
+        groups[key].append(f)
 
     results: list[tuple[str, list[str]]] = []
 
     for (z_base, depth), members in sorted(groups.items()):
-        # Collect label categories for the comment
         cats = sorted({m.label.split("\u2014")[0].split("—")[0].strip()
                        for m in members if m.label})
         label_str = ", ".join(cats[:4])
         if len(cats) > 4:
             label_str += f" (+{len(cats) - 4} more)"
 
-        # Convert each cutout polygon to a Shapely Polygon
         shapely_polys: list[_SPoly] = []
         for m in members:
-            if len(m.polygon) < 3:
+            pts = _fragment_to_polygon(m)
+            if pts is None or len(pts) < 3:
                 continue
+            # Carry over holes from PolygonGeometry if present
+            holes = None
+            if isinstance(m.geometry, PolygonGeometry) and m.geometry.holes:
+                holes = [h for h in m.geometry.holes if len(h) >= 3]
             try:
-                sp = _SPoly(m.polygon)
+                sp = _SPoly(pts, holes or [])
                 if not sp.is_valid:
                     sp = sp.buffer(0)
                 if sp.is_valid and not sp.is_empty:
@@ -105,28 +121,24 @@ def _merge_polygon_cutouts(
 
         merged = unary_union(shapely_polys)
 
-        # ── Clip to enclosure outline ──────────────────────────────
-        # Prevents component pockets / trace channels from bleeding
-        # through the outer shell walls.
         if outline_poly is not None and not merged.is_empty:
             try:
-                merged = merged.intersection(outline_poly)
+                clip = outline_poly.buffer(0.01, join_style="mitre", mitre_limit=5.0)
+                merged = merged.intersection(clip)
             except Exception:
                 pass
 
         if merged.is_empty:
             continue
 
-        # ── Simplify vertex count ──────────────────────────────────
-        # 0.05 mm tolerance is sub-layer on any FDM printer and
-        # invisible in the final part; can halve the vertex count of
-        # merged trace+pocket polygons.
         try:
             merged = merged.simplify(0.05, preserve_topology=True)
         except Exception:
             pass
 
-        # Collect individual Polygon objects
+        if not merged.is_valid:
+            merged = merged.buffer(0)
+
         if isinstance(merged, _SPoly):
             geoms: list[_SPoly] = [merged]
         elif isinstance(merged, _SMultiPoly):
@@ -140,14 +152,52 @@ def _merge_polygon_cutouts(
         if not geoms:
             continue
 
-        # ── Build OpenSCAD multi-path polygon ─────────────────────
-        # polygon(points=[...], paths=[[exterior], [hole], ...])
-        # Each disconnected region and each hole is a separate path.
-        # This collapses N separate polygon() calls into one primitive.
+        # Round coordinates to output precision and re-validate.
+        # Shapely may consider a polygon valid at float64 precision while
+        # the 3dp-rounded version self-intersects.
+        def _round_poly(p: _SPoly) -> _SPoly | None:
+            """Round coords to 3dp and repair until valid or give up."""
+            for _attempt in range(4):
+                ext = [(round(x, 3), round(y, 3)) for x, y in p.exterior.coords]
+                holes = [
+                    [(round(x, 3), round(y, 3)) for x, y in h.coords]
+                    for h in p.interiors
+                ]
+                try:
+                    p = _SPoly(ext, holes)
+                except Exception:
+                    return None
+                if p.is_valid:
+                    return p
+                repaired = p.buffer(0)
+                if repaired.is_empty:
+                    return None
+                if isinstance(repaired, _SMultiPoly):
+                    return repaired
+                p = repaired
+            return None
+
+        rounded_geoms: list[_SPoly] = []
+        for poly in geoms:
+            result = _round_poly(poly)
+            if result is None:
+                continue
+            if isinstance(result, _SMultiPoly):
+                for part in result.geoms:
+                    rp = _round_poly(part)
+                    if rp is None or isinstance(rp, _SMultiPoly):
+                        continue
+                    if not rp.is_empty:
+                        rounded_geoms.append(rp)
+            elif not result.is_empty:
+                rounded_geoms.append(result)
+
+        if not rounded_geoms:
+            continue
+
         all_pts: list[tuple[float, float]] = []
         paths: list[list[int]] = []
-
-        for poly in geoms:
+        for poly in rounded_geoms:
             ext = list(poly.exterior.coords)[:-1]
             start = len(all_pts)
             all_pts.extend(ext)
@@ -158,19 +208,20 @@ def _merge_polygon_cutouts(
                 all_pts.extend(hc)
                 paths.append(list(range(h_start, h_start + len(hc))))
 
-        pts_str   = ", ".join(f"[{x:.3f}, {y:.3f}]" for x, y in all_pts)
+        pts_str = ", ".join(f"[{x:.3f}, {y:.3f}]" for x, y in all_pts)
         paths_str = ", ".join(
             "[" + ", ".join(str(i) for i in p) + "]" for p in paths
         )
 
         comment = (
             f"  // z={z_base:.2f} d={depth:.2f}  "
-            f"{len(members)} cutouts \u2192 {len(geoms)} polygon(s)  "
+            f"{len(members)} fragments \u2192 {len(geoms)} polygon(s)  "
             f"{len(all_pts)} verts  [{label_str}]"
         )
+        _EPS = 0.001
         scad_lines = [
-            f"  translate([0, 0, {z_base:.3f}])",
-            f"    linear_extrude(height = {depth:.3f})",
+            f"  translate([0, 0, {z_base - _EPS:.3f}])",
+            f"    linear_extrude(height = {depth + 2 * _EPS:.3f})",
             f"      polygon(points = [{pts_str}], paths = [{paths_str}]);",
         ]
         results.append((comment, scad_lines))
@@ -178,12 +229,19 @@ def _merge_polygon_cutouts(
     return results
 
 
+# ── Helpers ────────────────────────────────────────────────────────
+
+
+def _indent(lines: list[str], prefix: str) -> list[str]:
+    return [prefix + line for line in lines]
+
+
 # ── Public API ─────────────────────────────────────────────────────
 
 
 def generate_scad(
     shell_body_lines: list[str],
-    cutouts: list[Cutout],
+    fragments: list[ScadFragment],
     session_id: str = "",
     metadata: dict | None = None,
     outline_pts: list[list[float]] | None = None,
@@ -193,17 +251,15 @@ def generate_scad(
     Parameters
     ----------
     shell_body_lines : list[str]
-        Lines produced by ``layers.shell_body_lines()`` — forms the
-        ``union()`` solid body block.
-    cutouts : list[Cutout]
-        Cutouts to subtract.  May be empty (solid shell, no booleans).
+        Lines produced by ``layers.shell_body_lines()``.
+    fragments : list[ScadFragment]
+        All geometry contributions (cutouts + additions).
     session_id : str
         Written into the header comment.
     metadata : dict, optional
-        Extra key-value pairs for the header comment (e.g. component count).
+        Extra key-value pairs for the header comment.
     outline_pts : list of [x, y], optional
-        The 2-D enclosure footprint polygon.  When provided, polygon cutouts
-        are clipped to it (prevents pockets bleeding through walls).
+        The 2-D enclosure footprint polygon for clipping.
     """
     now = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -223,65 +279,179 @@ def generate_scad(
         "\n"
     )
 
-    # ── No cutouts — just emit the shell body directly ─────────────
-    if not cutouts:
-        return header + "\n".join(shell_body_lines) + "\n"
+    cutouts = [f for f in fragments if f.type == "cutout"]
+    additions = [f for f in fragments if f.type == "addition"]
 
-    # ── Split cutouts: cylinders are already fast, polygons need merging ──
-    cylinder_cuts = [c for c in cutouts if c.cylinder_r is not None]
-    polygon_cuts  = [c for c in cutouts if c.cylinder_r is     None]
+    # No cutouts and no additions — just emit the shell body
+    if not cutouts and not additions:
+        body = "\n".join(_indent(shell_body_lines, "  "))
+        return header + f"mirror([0, 1, 0]) {{\n{body}\n}}\n"
 
-    # Merge polygon cutouts: group by (z_base, depth), unary_union per group,
-    # simplify vertices, clip to outline, emit as multi-path polygons.
-    merged_groups = _merge_polygon_cutouts(polygon_cuts, outline_pts)
+    # Split cutouts: tilted go separate; everything else merges as polygons
+    tilted_cuts: list[ScadFragment] = []
+    polygon_cuts: list[ScadFragment] = []
+    tapered_cuts: list[ScadFragment] = []
+    for f in cutouts:
+        if f.tilt_deg or f.rotate_3d:
+            tilted_cuts.append(f)
+        elif f.taper_scale:
+            tapered_cuts.append(f)
+        else:
+            polygon_cuts.append(f)
+
+    merged_groups = _merge_polygon_fragments(polygon_cuts, outline_pts)
 
     log.info(
-        "Cutout merging: %d polygon cuts → %d groups  |  %d cylinder cuts",
-        len(polygon_cuts), len(merged_groups), len(cylinder_cuts),
+        "Cutout merging: %d polygon → %d groups  |  %d tilted  |  %d additions",
+        len(polygon_cuts), len(merged_groups), len(tilted_cuts), len(additions),
     )
 
-    # ── With cutouts — wrap in difference() ───────────────────────
-    out_lines: list[str] = ["difference() {", ""]
+    out_lines: list[str] = []
 
-    # Shell body (indented by 2 spaces) — wrapped in render() so OpenSCAD
-    # pre-computes the CGAL mesh once before subtracting all cutouts.
-    out_lines.append("  // --- Shell body -------------------------------------------------")
-    out_lines.append("  render(convexity = 10)")
-    out_lines += _indent(shell_body_lines, "  ")
-    out_lines.append("")
+    has_cutouts = bool(cutouts)
+    has_additions = bool(additions)
 
-    # ── Merged polygon groups ──────────────────────────────────────
-    # Each group is one difference() child (vs. one per original cutout).
-    out_lines.append("  // --- Polygon cutouts (merged by z-layer) -----------------------")
-    for comment, scad_lines in merged_groups:
+    if has_cutouts:
+        out_lines.append("difference() {")
         out_lines.append("")
-        out_lines.append(comment)
-        out_lines += scad_lines
 
-    # ── Cylinder cutouts ───────────────────────────────────────────
-    # Wrap all cylinders in one union() so they count as a single
-    # difference() child instead of N separate ones.
-    if cylinder_cuts:
+    # Shell body + additions wrapped in union()
+    if has_additions:
+        out_lines.append("  union() {")
+        out_lines.append("    // --- Shell body ---")
+        out_lines += _indent(shell_body_lines, "    ")
         out_lines.append("")
-        out_lines.append(f"  // --- Cylindrical holes ({len(cylinder_cuts)}) ----------------------------")
-        if len(cylinder_cuts) == 1:
-            c = cylinder_cuts[0]
-            out_lines.append(f"  // {c.label}")
-            out_lines += [
-                f"  translate([{c.cylinder_cx:.3f}, {c.cylinder_cy:.3f}, {c.z_base:.3f}])",
-                f"    cylinder(h = {c.depth:.3f}, r = {c.cylinder_r:.3f});",
-            ]
-        else:
-            out_lines.append("  union() {")
-            for c in cylinder_cuts:
+        out_lines.append("    // --- Additions ---")
+        for a in additions:
+            out_lines.append(f"    // {a.label}")
+            out_lines += _indent(_fragment_scad_lines(a), "    ")
+        out_lines.append("  }")
+    else:
+        prefix = "  " if has_cutouts else ""
+        if has_cutouts:
+            out_lines.append("  // --- Shell body ---")
+        out_lines += _indent(shell_body_lines, prefix)
+
+    if has_cutouts:
+        out_lines.append("")
+        out_lines.append("    // --- Polygon cutouts (merged by z-layer) ---")
+
+        for comment, scad_lines in merged_groups:
+            out_lines.append("")
+            out_lines.append("    " + comment.lstrip())
+            out_lines += _indent(scad_lines, "    ")
+
+        if tapered_cuts:
+            out_lines.append("")
+            out_lines.append(f"    // --- Tapered cutouts ({len(tapered_cuts)}) ---")
+            for c in tapered_cuts:
                 if c.label:
                     out_lines.append(f"    // {c.label}")
-                out_lines += [
-                    f"    translate([{c.cylinder_cx:.3f}, {c.cylinder_cy:.3f}, {c.z_base:.3f}])",
-                    f"      cylinder(h = {c.depth:.3f}, r = {c.cylinder_r:.3f});",
-                ]
-            out_lines.append("  }")
+                out_lines += _indent(_tapered_scad_lines(c), "    ")
 
-    out_lines += ["", "}"]
+        if tilted_cuts:
+            out_lines.append("")
+            out_lines.append(f"    // --- Tilted cutouts ({len(tilted_cuts)}) ---")
+            for c in tilted_cuts:
+                if c.label:
+                    out_lines.append(f"    // {c.label}")
+                out_lines += _indent(_tilted_scad_lines(c), "    ")
 
-    return header + "\n".join(out_lines) + "\n"
+        out_lines += ["", "}"]     # close difference()
+
+    body = "\n".join(_indent(out_lines, "  "))
+    return header + f"mirror([0, 1, 0]) {{\n{body}\n}}\n"
+
+
+def _tapered_scad_lines(frag: ScadFragment) -> list[str]:
+    """Emit a smooth tapered extrusion (pinhole funnel).
+
+    Uses ``linear_extrude(scale=...)`` so the shape at z_base is the
+    narrow end and it widens to ``taper_scale`` at the top.
+    """
+    g = frag.geometry
+    _EPS = 0.001
+    scale = frag.taper_scale
+
+    if isinstance(g, RectGeometry):
+        return [
+            f"translate([{g.cx:.3f}, {g.cy:.3f}, {frag.z_base - _EPS:.3f}])",
+            f"  linear_extrude(height = {frag.depth + 2 * _EPS:.3f}, scale = [{scale:.4f}, {scale:.4f}])",
+            f"    square([{g.width + 2 * _EPS:.3f}, {g.height + 2 * _EPS:.3f}], center = true);",
+        ]
+    elif isinstance(g, CylinderGeometry):
+        r_top = g.r * scale
+        return [
+            f"translate([{g.cx:.3f}, {g.cy:.3f}, {frag.z_base - _EPS:.3f}])",
+            f"  cylinder(h = {frag.depth + 2 * _EPS:.3f}, r1 = {g.r + _EPS:.3f}, r2 = {r_top + _EPS:.3f});",
+        ]
+    return [f"// unsupported tapered geometry: {frag.label}"]
+
+
+def _tilted_scad_lines(frag: ScadFragment) -> list[str]:
+    """Emit a fragment that is tilted (rotated in 3-D) around its centre."""
+    g = frag.geometry
+    _EPS = 0.001
+
+    if frag.rotate_3d:
+        rx, ry, rz = frag.rotate_3d
+        z_center = frag.z_base
+        length = frag.depth
+        rot_str = f"rotate([{rx:.1f}, {ry:.1f}, {rz:.1f}])"
+    else:
+        z_center = frag.z_base + frag.depth / 2
+        length = frag.tilt_length
+        rot_str = f"rotate([0, {frag.tilt_deg:.1f}, {frag.rotation_deg:.1f}])"
+
+    if isinstance(g, CylinderGeometry):
+        base_lines = [
+            f"translate([{g.cx:.3f}, {g.cy:.3f}, {z_center:.3f}])",
+            f"  {rot_str}",
+            f"    cylinder(h = {length + 2 * _EPS:.3f}, r = {g.r + _EPS:.3f}, center = true);",
+        ]
+    elif isinstance(g, RectGeometry):
+        base_lines = [
+            f"translate([{g.cx:.3f}, {g.cy:.3f}, {z_center:.3f}])",
+            f"  {rot_str}",
+            f"    linear_extrude(height = {length + 2 * _EPS:.3f}, center = true)",
+            f"      square([{g.width + 2 * _EPS:.3f}, {g.height + 2 * _EPS:.3f}], center = true);",
+        ]
+    else:
+        return [f"// unsupported tilted geometry: {frag.label}"]
+
+    if frag.clip_half:
+        big = max(length, g.r if isinstance(g, CylinderGeometry) else max(g.width, g.height)) + 10
+        if frag.clip_half == "top":
+            clip_z = z_center
+        else:
+            clip_z = z_center - big
+        return [
+            "intersection() {",
+            *[f"  {l}" for l in base_lines],
+            f"  translate([{g.cx - big:.3f}, {g.cy - big:.3f}, {clip_z:.3f}])",
+            f"    cube([{2 * big:.3f}, {2 * big:.3f}, {big:.3f}]);",
+            "}",
+        ]
+
+    return base_lines
+
+
+def _fragment_scad_lines(frag: ScadFragment) -> list[str]:
+    """Convert a single fragment to OpenSCAD lines (for additions or standalone use)."""
+    if frag.tilt_deg or frag.rotate_3d:
+        return _tilted_scad_lines(frag)
+    g = frag.geometry
+    if isinstance(g, CylinderGeometry):
+        return [
+            f"translate([{g.cx:.3f}, {g.cy:.3f}, {frag.z_base:.3f}])",
+            f"  cylinder(h = {frag.depth:.3f}, r = {g.r:.3f});",
+        ]
+    pts = _fragment_to_polygon(frag)
+    if pts and len(pts) >= 3:
+        pts_str = ", ".join(f"[{x:.3f}, {y:.3f}]" for x, y in pts)
+        return [
+            f"translate([0, 0, {frag.z_base:.3f}])",
+            f"  linear_extrude(height = {frag.depth:.3f})",
+            f"    polygon(points = [{pts_str}]);",
+        ]
+    return [f"// empty fragment: {frag.label}"]

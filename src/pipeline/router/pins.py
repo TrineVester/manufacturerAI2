@@ -40,7 +40,7 @@ class PinPool:
 def pin_world_xy(
     pin_local: tuple[float, float],
     cx: float, cy: float,
-    rotation_deg: int,
+    rotation_deg: float,
 ) -> tuple[float, float]:
     """Transform a component-local pin position to world coordinates."""
     px, py = pin_local
@@ -60,7 +60,9 @@ def build_pin_pools(
     """Build dynamic pin pools for all instances with allocatable pin groups.
 
     Returns a map: instance_id -> PinPool.
-    Only instances that have at least one allocatable PinGroup are included.
+    Only instances that have at least one allocatable or fixed_net
+    PinGroup are included.  Fixed-net groups (e.g. power, ground)
+    need pool entries so the router can pick specific physical pins.
     """
     catalog_map = {c.id: c for c in catalog.components}
     placed_map = {p.instance_id: p for p in placement.components}
@@ -73,7 +75,7 @@ def build_pin_pools(
 
         inst_pools: dict[str, list[str]] = {}
         for pg in cat.pin_groups:
-            if pg.allocatable:
+            if pg.allocatable or pg.fixed_net:
                 inst_pools[pg.id] = list(pg.pin_ids)
 
         if inst_pools:
@@ -132,19 +134,22 @@ def get_pin_world_pos(
     catalog: CatalogResult,
 ) -> tuple[float, float] | None:
     """Get the world position of a specific physical pin."""
-    catalog_map = {c.id: c for c in catalog.components}
     pc = next((p for p in placement.components if p.instance_id == instance_id), None)
     if pc is None:
         return None
 
+    pos = pc.pin_positions.get(pin_id)
+    if pos is not None:
+        return pos
+
+    # Fallback: compute from catalog (e.g. legacy placement without pin_positions)
+    catalog_map = {c.id: c for c in catalog.components}
     cat = catalog_map.get(pc.catalog_id)
     if cat is None:
         return None
-
     pin = next((p for p in cat.pins if p.id == pin_id), None)
     if pin is None:
         return None
-
     return pin_world_xy(pin.position_mm, pc.x_mm, pc.y_mm, pc.rotation_deg)
 
 
@@ -171,12 +176,16 @@ def get_group_pin_positions(
     if group is None:
         return []
 
-    pin_map = {p.id: p.position_mm for p in cat.pins}
     result: list[tuple[str, float, float]] = []
     for pid in group.pin_ids:
-        if pid in pin_map:
-            wx, wy = pin_world_xy(pin_map[pid], pc.x_mm, pc.y_mm, pc.rotation_deg)
-            result.append((pid, wx, wy))
+        pos = pc.pin_positions.get(pid)
+        if pos is not None:
+            result.append((pid, pos[0], pos[1]))
+        else:
+            pin_map = {p.id: p.position_mm for p in cat.pins}
+            if pid in pin_map:
+                wx, wy = pin_world_xy(pin_map[pid], pc.x_mm, pc.y_mm, pc.rotation_deg)
+                result.append((pid, wx, wy))
 
     return result
 
@@ -199,24 +208,27 @@ def allocate_best_pin(
     if not available:
         return None
 
-    catalog_map = {c.id: c for c in catalog.components}
     pc = next((p for p in placement.components if p.instance_id == instance_id), None)
     if pc is None:
         return None
-
-    cat = catalog_map.get(pc.catalog_id)
-    if cat is None:
-        return None
-
-    pin_map = {p.id: p.position_mm for p in cat.pins}
 
     best_pin: str | None = None
     best_dist = float("inf")
 
     for pid in available:
-        if pid not in pin_map:
-            continue
-        wx, wy = pin_world_xy(pin_map[pid], pc.x_mm, pc.y_mm, pc.rotation_deg)
+        pos = pc.pin_positions.get(pid)
+        if pos is not None:
+            wx, wy = pos
+        else:
+            catalog_map = {c.id: c for c in catalog.components}
+            cat = catalog_map.get(pc.catalog_id)
+            if cat is None:
+                continue
+            pin_map = {p.id: p.position_mm for p in cat.pins}
+            if pid not in pin_map:
+                continue
+            wx, wy = pin_world_xy(pin_map[pid], pc.x_mm, pc.y_mm, pc.rotation_deg)
+
         d = math.hypot(wx - target_x, wy - target_y)
         if d < best_dist:
             best_dist = d
@@ -224,5 +236,8 @@ def allocate_best_pin(
 
     if best_pin is not None:
         available.remove(best_pin)
+        for other_group, other_pins in pool.pools.items():
+            if other_group != group_id and best_pin in other_pins:
+                other_pins.remove(best_pin)
 
     return best_pin

@@ -76,13 +76,33 @@ export async function runScad() {
             const msg = typeof err.detail === 'string'
                 ? err.detail
                 : err.detail?.reason || JSON.stringify(err.detail);
-            if (rerun) rerun.textContent = '❌ Failed';
+            if (rerun) rerun.textContent = '\u274c Failed';
             showStatus(`SCAD failed: ${msg}`, true);
             renderError(msg);
             return;
         }
 
-        const data = await res.json();
+        // Poll until SCAD generation completes (async backend)
+        showStatus('Generating SCAD\u2026');
+        let poll;
+        for (let i = 0; i < 300; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            const pr = await fetch(`${API}/api/session/scad/status?session=${encodeURIComponent(state.session)}`);
+            poll = await pr.json();
+            if (poll.status === 'done' || poll.status === 'error' || poll.status === 'idle') break;
+            if (poll.message) showStatus(`Generating\u2026 ${poll.message}`);
+        }
+        if (poll?.status === 'error') {
+            const msg = poll.message || poll.detail?.reason || 'SCAD generation failed';
+            showStatus(`SCAD failed: ${msg}`, true);
+            renderError(msg);
+            return;
+        }
+
+        // Fetch the full result
+        const resultRes = await fetch(`${API}/api/session/scad/result?session=${encodeURIComponent(state.session)}`);
+        if (!resultRes.ok) { showStatus('Failed to load SCAD result', true); return; }
+        const data = await resultRes.json();
         renderResult(data);
         stopTabFlash();
         enableManufacturingTab(true);

@@ -33,6 +33,7 @@ from src.pipeline.placer import (
     place_components,
     placement_to_dict,
     parse_placement,
+    parse_placed_components,
     footprint_halfdims,
     footprint_envelope_halfdims,
     pin_world_xy,
@@ -606,21 +607,19 @@ class TestPlacementSerialization(unittest.TestCase):
     def test_to_dict(self):
         """placement_to_dict produces a valid JSON-serializable dict."""
         d = placement_to_dict(self.placement)
-        # Should be JSON-serializable
         json_str = json.dumps(d)
         self.assertIsInstance(json_str, str)
-        # Check structure
         self.assertIn("components", d)
-        self.assertIn("outline", d)
-        self.assertIn("nets", d)
+        self.assertNotIn("outline", d)
+        self.assertNotIn("nets", d)
         self.assertEqual(len(d["components"]), 4)
 
     def test_round_trip(self):
-        """placement_to_dict -> parse_placement should preserve data."""
+        """placement_to_dict -> parse_placed_components should preserve data."""
         d = placement_to_dict(self.placement)
-        restored = parse_placement(d)
-        self.assertEqual(len(restored.components), len(self.placement.components))
-        for orig, rest in zip(self.placement.components, restored.components):
+        restored_comps = parse_placed_components(d)
+        self.assertEqual(len(restored_comps), len(self.placement.components))
+        for orig, rest in zip(self.placement.components, restored_comps):
             self.assertEqual(orig.instance_id, rest.instance_id)
             self.assertEqual(orig.catalog_id, rest.catalog_id)
             self.assertAlmostEqual(orig.x_mm, rest.x_mm, places=2)

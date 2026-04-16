@@ -132,7 +132,7 @@ async function loadDesignResult() {
         );
         if (!res.ok) return;
         const design = await res.json();
-        if (design && design.components) {
+        if (design && design.outline) {
             appendDesignResult(design);
             setViewportData('design', design);
             // Enable placement tab since design exists
@@ -165,19 +165,36 @@ export async function sendDesignPrompt() {
             url += `?session=${encodeURIComponent(state.session)}`;
         }
 
-        const response = await fetch(url, {
+        // 1. POST to trigger the design agent
+        const postRes = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt, model: getSelectedModel() }),
         });
 
-        if (!response.ok) {
-            const err = await response.text();
+        if (!postRes.ok) {
+            const err = await postRes.text();
             appendMessage('error', `Server error: ${err}`);
             return;
         }
 
-        await consumeSSE(response);
+        const postData = await postRes.json();
+        // Handle session creation for first message
+        if (postData.session_id) {
+            onSessionCreated(postData.session_id);
+        }
+
+        // 2. Open SSE stream to consume events
+        let streamUrl = `${API}/api/session/design/stream`;
+        if (state.session) {
+            streamUrl += `?session=${encodeURIComponent(state.session)}`;
+        }
+        const sseRes = await fetch(streamUrl);
+        if (!sseRes.ok) {
+            appendMessage('error', `Failed to open event stream`);
+            return;
+        }
+        await consumeSSE(sseRes);
     } catch (e) {
         appendMessage('error', `Connection error: ${e.message}`);
     } finally {

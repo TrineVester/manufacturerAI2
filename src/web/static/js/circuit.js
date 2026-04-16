@@ -100,7 +100,7 @@ async function loadCircuitResult() {
         const design = await res.json();
         if (design && design.components) {
             appendCircuitResult(design);
-            setViewportData('design', design);
+            setViewportData('circuit', design);
         }
     } catch { /* no circuit yet */ }
 }
@@ -138,19 +138,26 @@ export async function sendCircuitPrompt() {
 
     try {
         const url = `${API}/api/session/circuit?session=${encodeURIComponent(state.session)}`;
-        const response = await fetch(url, {
+        const postRes = await fetch(url, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ prompt, model: getSelectedModel() }),
         });
 
-        if (!response.ok) {
-            const err = await response.text();
+        if (!postRes.ok) {
+            const err = await postRes.text();
             appendMessage('error', `Server error: ${err}`);
             return;
         }
 
-        await consumeSSE(response);
+        // Open SSE stream to consume events
+        const streamUrl = `${API}/api/session/circuit/stream?session=${encodeURIComponent(state.session)}`;
+        const sseRes = await fetch(streamUrl);
+        if (!sseRes.ok) {
+            appendMessage('error', `Failed to open event stream`);
+            return;
+        }
+        await consumeSSE(sseRes);
     } catch (e) {
         appendMessage('error', `Connection error: ${e.message}`);
     } finally {
@@ -266,7 +273,7 @@ async function consumeSSE(response) {
 
                 case 'design':
                     appendCircuitResult(data.design);
-                    setViewportData('design', data.design);
+                    setViewportData('circuit', data.design);
                     statusSpan().textContent = 'Circuit complete!';
                     // Enable placement step, invalidate downstream
                     enablePlacementTab(true);

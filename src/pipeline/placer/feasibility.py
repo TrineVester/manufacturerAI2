@@ -3,7 +3,7 @@ Lightweight placement feasibility check.
 
 Runs a fast coarse-grid scan on each auto-placed component individually,
 treating all UI-placed components as fixed obstacles.  Returns a text report
-the design agent can act on *before* calling submit_design.
+the design agent can act on before finalising the design.
 
 Differences from the real placer:
   - Grid step: 3 mm instead of 1 mm  (9x fewer cells → fast enough for a tool)
@@ -77,6 +77,8 @@ def _scan_component(
     poly_bounds: tuple[float, float, float, float],
     ui_obstacles: list[_UIObstacle],
     edge_clr: float,
+    raised_floor_fn=None,
+    pcb_contour_prep=None,
 ) -> ComponentFeasibility:
     body_w = cat.body.width_mm or cat.body.diameter_mm or 1.0
     body_h = cat.body.length_mm or cat.body.diameter_mm or 1.0
@@ -89,6 +91,16 @@ def _scan_component(
         ehw, ehh = footprint_envelope_halfdims(cat, rot)
         ihw = ehw + edge_clr
         ihh = ehh + edge_clr
+
+        # Precompute rotated pin offsets for raised-floor check
+        import math as _math
+        _rad = _math.radians(rot)
+        _cos_r, _sin_r = _math.cos(_rad), _math.sin(_rad)
+        _pin_offsets = [
+            (p.position_mm[0] * _cos_r - p.position_mm[1] * _sin_r,
+             p.position_mm[0] * _sin_r + p.position_mm[1] * _cos_r)
+            for p in cat.pins
+        ]
 
         xs, xe = xmin + ihw, xmax - ihw
         ys, ye = ymin + ihh, ymax - ihh
@@ -105,12 +117,38 @@ def _scan_component(
             cy = ys
             while cy <= ye + 1e-6:
                 # Hard constraint 1: inflated footprint inside outline
-                if not prep_poly.contains(
-                    shapely_box(cx - ihw, cy - ihh, cx + ihw, cy + ihh)
-                ):
+                _inflated = shapely_box(cx - ihw, cy - ihh, cx + ihw, cy + ihh)
+                if not prep_poly.contains(_inflated):
                     reasons["[outline]"] = reasons.get("[outline]", 0) + 1
                     cy += FAST_GRID_STEP
                     continue
+
+                # Hard constraint 1a: inflated footprint inside PCB contour
+                # (enforces edge clearance from the flat→raised boundary)
+                if pcb_contour_prep is not None:
+                    if not pcb_contour_prep.contains(_inflated):
+                        reasons["[pcb_contour]"] = reasons.get("[pcb_contour]", 0) + 1
+                        cy += FAST_GRID_STEP
+                        continue
+
+                # Hard constraint 1b: reject positions in the raised-floor zone
+                if raised_floor_fn is not None:
+                    _in_raised = False
+                    _check_pts = [
+                        (cx, cy),
+                        (cx - ehw, cy - ehh), (cx + ehw, cy - ehh),
+                        (cx - ehw, cy + ehh), (cx + ehw, cy + ehh),
+                    ]
+                    for _pox, _poy in _pin_offsets:
+                        _check_pts.append((cx + _pox, cy + _poy))
+                    for _px, _py in _check_pts:
+                        if raised_floor_fn(_px, _py):
+                            _in_raised = True
+                            break
+                    if _in_raised:
+                        reasons["[raised_floor]"] = reasons.get("[raised_floor]", 0) + 1
+                        cy += FAST_GRID_STEP
+                        continue
 
                 # Hard constraint 2: clearance from UI obstacles
                 blocked_by: str | None = None
@@ -200,6 +238,46 @@ def run_feasibility_check(
     prep_poly = shapely_prep(poly)
     xmin, ymin, xmax, ymax = poly.bounds
 
+    # Raised-floor detection: construct a callable that returns True if
+    # a position falls in the raised zone (z_bottom >= FLOOR_MM).
+    _raised_floor_fn = None
+    _pcb_contour_prep = None
+    if enclosure_raw:
+        try:
+            from src.pipeline.design.parsing import _parse_outline, _parse_enclosure
+            from src.pipeline.design.height_field import blended_bottom_height
+            from src.pipeline.config import FLOOR_MM
+            _out_obj = _parse_outline(outline_raw)
+            _enc_obj = _parse_enclosure(enclosure_raw)
+            _has_raised = any(
+                getattr(p, 'z_bottom', None) for p in _out_obj.points
+            ) or _enc_obj.bottom_surface is not None
+            if _has_raised:
+                _thresh = FLOOR_MM - 0.1
+
+                def _raised_floor_fn(x, y):
+                    return blended_bottom_height(
+                        x, y, _out_obj, _enc_obj,
+                    ) >= _thresh
+
+                # Derive the PCB contour polygon so the scan can
+                # enforce edge clearance from the flat→raised boundary.
+                from src.pipeline.design.height_field import (
+                    sample_bottom_height_grid,
+                    pcb_contour_from_bottom_grid,
+                )
+                _bot_grid = sample_bottom_height_grid(_out_obj, _enc_obj)
+                if _bot_grid is not None:
+                    _contour_pts = pcb_contour_from_bottom_grid(
+                        _bot_grid, _out_obj, FLOOR_MM,
+                    )
+                    if _contour_pts is not None and len(_contour_pts) >= 3:
+                        _pcb_poly = Polygon([(p[0], p[1]) for p in _contour_pts])
+                        if _pcb_poly.is_valid and _pcb_poly.area > 1.0:
+                            _pcb_contour_prep = shapely_prep(_pcb_poly)
+        except Exception:
+            pass
+
     # UI placement position lookup
     ui_pos: dict[str, tuple[float, float]] = {
         p["instance_id"]: (float(p["x_mm"]), float(p["y_mm"]))
@@ -245,7 +323,7 @@ def run_feasibility_check(
         return (
             "No auto-placed components found in this design "
             "(all components are UI-placed or side-mounted). "
-            "Nothing to check — proceed to submit_design."
+            "Nothing to check — design looks good."
         )
 
     # Run per-component scans
@@ -257,6 +335,8 @@ def run_feasibility_check(
                 prep_poly, (xmin, ymin, xmax, ymax),
                 ui_obstacles,
                 edge_clr=effective_edge_clr,
+                raised_floor_fn=_raised_floor_fn,
+                pcb_contour_prep=_pcb_contour_prep,
             )
         )
 
@@ -314,7 +394,7 @@ def run_feasibility_check(
         lines.append(
             "All auto-placed components have candidate positions. "
             "The full placer may still reject due to inter-component overlap, "
-            "but the layout looks viable. You may call submit_design."
+            "but the layout looks viable."
         )
     else:
         fail_ids = ", ".join(r.instance_id for r in fails)

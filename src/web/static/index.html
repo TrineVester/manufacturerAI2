@@ -152,6 +152,26 @@
                 <div id="manufacturing-hero" class="placement-hero">
                     <div class="placement-hero-icon">🏭</div>
                     <p>Generate G-code for 3D printing and trace bitmaps for ink deposition</p>
+                    <div class="mfg-config" style="display:flex;gap:16px;margin:10px 0;align-items:center;flex-wrap:wrap;justify-content:center;">
+                        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted);">
+                            Printer
+                            <select id="mfg-printer-select" class="settings-select" style="min-width:140px;">
+                                <option value="coreone">Prusa Core One+</option>
+                                <option value="mk3s_plus">Prusa i3 MK3S+</option>
+                                <option value="mk3s">Prusa MK3S</option>
+                            </select>
+                        </label>
+                        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-muted);">
+                            Filament
+                            <select id="mfg-filament-select" class="settings-select" style="min-width:110px;">
+                                <option value="pla">PLA</option>
+                                <option value="petg">PETG</option>
+                                <option value="abs">ABS</option>
+                                <option value="tpu_95a">TPU</option>
+                                <option value="nylon">Nylon</option>
+                            </select>
+                        </label>
+                    </div>
                     <button id="btn-run-manufacturing" class="placement-cta">Run Manufacturing</button>
                     <span id="manufacturing-status" class="design-status-inline"></span>
                 </div>

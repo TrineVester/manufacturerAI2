@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from src.pipeline.design.models import Outline, Net, Enclosure
 
@@ -18,7 +18,10 @@ class PlacedComponent:
     catalog_id: str
     x_mm: float
     y_mm: float
-    rotation_deg: int   # 0, 90, 180, 270
+    rotation_deg: float   # degrees, arbitrary for side-mount; 0/90/180/270 for internal
+    pin_positions: dict[str, tuple[float, float]] = field(default_factory=dict)
+    mounting_style: str = "top"
+    button_outline: list[list[float]] | None = None  # custom button shape [[x,y], ...]
 
 
 @dataclass
@@ -58,15 +61,24 @@ MIN_EDGE_CLEARANCE_MM = TRACE_RULES.min_edge_clearance_mm
 ROUTING_CHANNEL_MM = TRACE_RULES.routing_channel_mm
 MIN_PIN_CLEARANCE_MM = TRACE_RULES.min_pin_clearance_mm
 
-# Scoring weights — higher absolute value = more influence.
-W_NET_PROXIMITY = 5.0       # MAIN driver: connected components close
-W_EDGE_CLEARANCE = 0.5      # prefer safe distance from outline
-W_COMPACTNESS = 0.3          # weakly prefer compact layouts
-W_CLEARANCE_UNIFORM = 1.0   # prefer uniform gaps between components
-W_BOTTOM_PREFERENCE = 0.08  # bottom-mount components prefer low Y
-W_CROSSING = 50.0            # heavy penalty per inter-net crossing
-W_PIN_COLLOCATION = 40.0     # heavy penalty per near-colliding pin pair
-W_SPREAD = 0.6               # reward for spreading out when space allows
-W_LARGE_EDGE_PULL = 0.3      # pulls large components toward outline edges
-W_PIN_SIDE = 2.0             # penalty for approaching placed comp from wrong side
-W_GROUP_COHESION = 1.5       # reward for staying near group-mates
+
+@dataclass
+class Placed:
+    """Tracking info for a placed component during the algorithm."""
+
+    instance_id: str
+    catalog_id: str
+    x: float
+    y: float
+    rotation: int
+    hw: float       # half width (rotated body)
+    hh: float       # half height (rotated body)
+    keepout: float   # keepout_margin_mm
+    env_hw: float = 0.0   # half width of pin-inclusive envelope
+    env_hh: float = 0.0   # half height of pin-inclusive envelope
+
+    def __post_init__(self) -> None:
+        if self.env_hw == 0.0:
+            self.env_hw = self.hw
+        if self.env_hh == 0.0:
+            self.env_hh = self.hh

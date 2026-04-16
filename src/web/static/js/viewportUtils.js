@@ -298,12 +298,12 @@ export function attachViewToggle(step, render2DFn, create3DFn) {
     function _updateToggleBtn() {
         const tb = _toolbar();
         if (!tb) return;
-        // Remove any existing toggle button for this step
-        tb.querySelectorAll('.vp-3d-toggle-btn').forEach(b => b.remove());
+        // Remove only the 2D/3D toggle (not other toolbar buttons like bitmap)
+        tb.querySelectorAll('.vp-view-toggle-btn').forEach(b => b.remove());
 
         const state = getViewState(step);
         const btn = document.createElement('button');
-        btn.className = 'vp-3d-toggle-btn';
+        btn.className = 'vp-3d-toggle-btn vp-view-toggle-btn';
         if (state.mode === '3d') {
             btn.textContent = '2D';
             btn.title = 'Switch to 2D view';
@@ -370,12 +370,12 @@ export function attachViewToggle(step, render2DFn, create3DFn) {
             if (scene) { scene.destroy(); scene = null; }
             lastEl = null; lastData = null;
             const tb = _toolbar();
-            if (tb) tb.querySelectorAll('.vp-3d-toggle-btn').forEach(b => b.remove());
+            if (tb) tb.querySelectorAll('.vp-view-toggle-btn').forEach(b => b.remove());
         },
         unmount()         {
             if (scene) { scene.destroy(); scene = null; }
             const tb = _toolbar();
-            if (tb) tb.querySelectorAll('.vp-3d-toggle-btn').forEach(b => b.remove());
+            if (tb) tb.querySelectorAll('.vp-view-toggle-btn').forEach(b => b.remove());
         },
         resize(w, h)      { if (scene) scene.resize(w, h); },
     };

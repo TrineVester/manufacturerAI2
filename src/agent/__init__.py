@@ -1,20 +1,36 @@
-"""Agent package — LLM-driven design + circuit agents using Anthropic API."""
+"""LLM agent package — design and circuit agents."""
 
-from .config import MODEL, MAX_TOKENS, THINKING_BUDGET, MAX_TURNS, TOKEN_BUDGET
-from .tools import TOOLS, DESIGN_TOOLS, CIRCUIT_TOOLS
-from .prompt import _build_system_prompt, _build_design_prompt, _build_circuit_prompt, _catalog_summary
-from .messages import _serialize_content, _sanitize_messages, _prune_messages
-from .core import DesignAgent, CircuitAgent, AgentEvent
+from .core import AgentEvent, DesignAgent, CircuitAgent
+from .tools import DESIGN_TOOLS, CIRCUIT_TOOLS
+from .prompt import (
+    catalog_summary,
+    build_design_prompt,
+    build_circuit_prompt,
+    build_circuit_user_prompt,
+)
+from .messages import serialize_content, sanitize_messages, prune_messages, strip_thinking_blocks
+from .config import MODEL, MAX_TOKENS, MAX_TURNS, TOKEN_BUDGET, MODELS, get_model
 
 __all__ = [
-    # Config
-    "MODEL", "MAX_TOKENS", "THINKING_BUDGET", "MAX_TURNS", "TOKEN_BUDGET",
-    # Tools & prompt
-    "TOOLS", "DESIGN_TOOLS", "CIRCUIT_TOOLS",
-    "_build_system_prompt", "_build_design_prompt", "_build_circuit_prompt",
-    "_catalog_summary",
+    # Core
+    "AgentEvent",
+    "DesignAgent",
+    "CircuitAgent",
+    # Tools
+    "DESIGN_TOOLS",
+    "CIRCUIT_TOOLS",
+    # Prompts
+    "catalog_summary",
+    "build_design_prompt",
+    "build_circuit_prompt",
+    "build_circuit_user_prompt",
     # Messages
-    "_serialize_content", "_sanitize_messages", "_prune_messages",
-    # Agents
-    "DesignAgent", "CircuitAgent", "AgentEvent",
+    "serialize_content",
+    "sanitize_messages",
+    "prune_messages",
+    # Config
+    "MODEL",
+    "MAX_TOKENS",
+    "MAX_TURNS",
+    "TOKEN_BUDGET",
 ]

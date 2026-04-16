@@ -7,7 +7,6 @@ Sessions are identified by a short ID (timestamp-based) and stored under
 
 A session folder contains:
   session.json   — metadata (created, last_modified, description, pipeline_state)
-  catalog.json   — snapshot of the catalog result at session creation time
   design.json    — agent's DesignSpec (once created)
   placement.json — placer output
   routing.json   — router output
@@ -20,15 +19,15 @@ This module manages creation, loading, listing, and updating of sessions.
 from __future__ import annotations
 
 import json
-import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
-log = logging.getLogger(__name__)
+from src.pipeline.config import DEFAULT_PRINTER
 
+DEFAULT_FILAMENT = "pla"
 
 ROOT = Path(__file__).resolve().parent.parent
 SESSIONS_DIR = ROOT / "outputs" / "sessions"
@@ -42,24 +41,23 @@ class Session:
     last_modified: str                   # ISO 8601
     description: str = ""
     name: str = ""                       # LLM-generated friendly name
+    printer_id: str = DEFAULT_PRINTER
+    filament_id: str = DEFAULT_FILAMENT
+    model_id: str = "medium"
     pipeline_state: dict = field(default_factory=dict)  # stage -> status
-    pipeline_errors: dict = field(default_factory=dict)  # stage -> {error, reason}
-    version: int = 0                     # increments on every save()
-    _batch_depth: int = field(default=0, repr=False)  # nesting depth for batch_update
+    pipeline_errors: dict = field(default_factory=dict)  # stage -> {error, reason, responsible_agent}
+
+    def set_step_error(self, step: str, detail: dict) -> None:
+        """Persist an error for a pipeline step."""
+        self.pipeline_errors[step] = detail
+        self.save()
+
+    def clear_step_error(self, step: str) -> None:
+        """Remove a persisted error for a pipeline step."""
+        self.pipeline_errors.pop(step, None)
 
     def save(self) -> None:
-        """Persist session metadata to session.json.
-
-        Inside a ``batch_update()`` context, this is deferred until the
-        outermost context exits.  Outside of one it writes immediately.
-        """
-        if self._batch_depth > 0:
-            return  # deferred — batch_update __exit__ will call _do_save
-        self._do_save()
-
-    def _do_save(self) -> None:
-        """Unconditionally write session.json to disk."""
-        self.version += 1
+        """Persist session metadata to session.json."""
         self.last_modified = datetime.now(timezone.utc).isoformat()
         self.path.mkdir(parents=True, exist_ok=True)
         meta = {
@@ -68,80 +66,171 @@ class Session:
             "last_modified": self.last_modified,
             "description": self.description,
             "name": self.name,
+            "printer_id": self.printer_id,
+            "filament_id": self.filament_id,
+            "model_id": self.model_id,
             "pipeline_state": self.pipeline_state,
             "pipeline_errors": self.pipeline_errors,
-            "version": self.version,
         }
         (self.path / "session.json").write_text(
             json.dumps(meta, indent=2), encoding="utf-8")
 
-    def batch_update(self):
-        """Context manager that defers ``save()`` calls until exit.
-
-        Usage::
-
-            with session.batch_update():
-                session.pipeline_state["placement"] = "complete"
-                session.write_artifact("placement.json", data)
-                session.save()  # no-op inside batch
-            # single save() happens here
-        """
-        return _BatchUpdate(self)
+    def artifact_path(self, filename: str) -> Path:
+        """Return the full path for an artifact, namespaced by pipeline stage."""
+        stage = self._ARTIFACT_STAGE.get(filename)
+        if stage:
+            return self.path / stage / filename
+        return self.path / filename
 
     def write_artifact(self, filename: str, data: Any) -> Path:
-        """Write a JSON artifact to the session folder.
-
-        NOTE: Does NOT auto-save session.json.  Callers must call
-        ``save()`` explicitly after all artifact writes are complete
-        to keep session metadata in sync with artifact files.
-        """
-        p = self.path / filename
+        """Write a JSON artifact to the session folder."""
+        p = self.artifact_path(filename)
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+        self.save()
+        return p
+
+    def write_artifact_text(self, filename: str, text: str) -> Path:
+        """Write a raw text artifact to the session folder."""
+        p = self.artifact_path(filename)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+        self.save()
         return p
 
     def read_artifact(self, filename: str) -> Any | None:
         """Read a JSON artifact from the session folder. Returns None if missing."""
-        p = self.path / filename
+        p = self.artifact_path(filename)
         if not p.exists():
             return None
         return json.loads(p.read_text(encoding="utf-8"))
 
     def has_artifact(self, filename: str) -> bool:
-        return (self.path / filename).exists()
+        return self.artifact_path(filename).exists()
 
     def delete_artifact(self, filename: str) -> bool:
         """Delete a JSON artifact. Returns True if it existed."""
-        p = self.path / filename
+        p = self.artifact_path(filename)
         if p.exists():
             p.unlink()
             return True
         return False
 
-    def record_error(self, stage: str, error: str, reason: str = "") -> None:
-        """Record a structured pipeline error for *stage*."""
-        self.pipeline_errors[stage] = {"error": error, "reason": reason}
+    @property
+    def artifacts(self) -> dict[str, bool]:
+        return {
+            "catalog": True,
+            "design": self.has_artifact("design.json"),
+            "circuit": self.has_artifact("circuit.json"),
+            "circuit_pending": self.has_artifact("circuit_pending.json"),
+            "placement": self.has_artifact("placement.json"),
+            "routing": self.has_artifact("routing.json"),
+            "bitmap": self.has_artifact("trace_bitmap.txt"),
+            "scad": self.has_artifact("enclosure.scad") or self.has_artifact("enclosure_bottom.scad"),
+            "compile": self.has_artifact("enclosure.stl") or self.has_artifact("enclosure_bottom.stl"),
+            "gcode": self.has_artifact("enclosure.gcode"),
+            "firmware": self.has_artifact("firmware.ino"),
+        }
 
-    def clear_error(self, stage: str) -> None:
-        """Remove a recorded error for *stage*."""
-        self.pipeline_errors.pop(stage, None)
+    _PIPELINE_ORDER: ClassVar[list[str]] = ["design", "circuit", "placement", "routing", "bitmap", "scad", "gcode", "firmware"]
+    _STAGE_ARTIFACTS: ClassVar[dict[str, list[str]]] = {
+        "design": ["design.json", "outline.json", "design_conversation.json"],
+        "circuit": ["circuit.json", "circuit_conversation.json"],
+        "placement": ["placement.json"],
+        "routing": ["routing.json", "routing_debug.json"],
+        "bitmap": ["trace_bitmap.txt"],
+        "scad": ["enclosure.scad", "enclosure.stl", "extras.scad", "extras.stl",
+                "enclosure_bottom.scad", "enclosure_bottom.stl",
+                "enclosure_top.scad", "enclosure_top.stl"],
+        "gcode": ["enclosure.gcode", "print_job.json"],
+        "firmware": ["firmware.ino", "sim_config.json"],
+    }
+
+    _ARTIFACT_STAGE: ClassVar[dict[str, str]] = {
+        "design.json": "design",
+        "outline.json": "design",
+        "design_conversation.json": "design",
+        "circuit.json": "circuit",
+        "circuit_pending.json": "circuit",
+        "circuit_conversation.json": "circuit",
+        "placement.json": "placement",
+        "routing.json": "routing",
+        "routing_debug.json": "routing",
+        "trace_bitmap.txt": "bitmap",
+        "enclosure.scad": "scad",
+        "enclosure.stl": "scad",
+        "enclosure_bottom.scad": "scad",
+        "enclosure_bottom.stl": "scad",
+        "enclosure_top.scad": "scad",
+        "enclosure_top.stl": "scad",
+        "extras.scad": "scad",
+        "extras.stl": "scad",
+        "enclosure.gcode": "gcode",
+        "firmware.ino": "firmware",
+        "print_job.json": "gcode",
+        "sim_config.json": "firmware",
+    }
+
+    def clear_stage_artifacts(self, stage: str) -> None:
+        """Delete all artifacts for a pipeline stage before rerunning it."""
+        for artifact in self._STAGE_ARTIFACTS.get(stage, []):
+            self.delete_artifact(artifact)
+
+    def invalidate_downstream(self, current_step: str) -> list[str]:
+        """Delete artifacts and pipeline_state for all stages after *current_step*."""
+        idx = self._PIPELINE_ORDER.index(current_step) if current_step in self._PIPELINE_ORDER else -1
+        invalidated: list[str] = []
+        for later in self._PIPELINE_ORDER[idx + 1:]:
+            for artifact in self._STAGE_ARTIFACTS.get(later, [f"{later}.json"]):
+                self.delete_artifact(artifact)
+            if later in self.pipeline_state:
+                del self.pipeline_state[later]
+                invalidated.append(later)
+            self.pipeline_errors.pop(later, None)
+        return invalidated
+
+    def invalidate_design_smart(self, new_design: dict) -> list[str]:
+        """Invalidate downstream of design, but skip circuit if components unchanged.
+
+        Only invalidates circuit when ui_placements differ in identity or
+        configuration (added, removed, catalog_id changed, config changed,
+        mounting_style changed). Pure position changes (x_mm, y_mm) and
+        outline/enclosure changes do NOT invalidate circuit.
+
+        When circuit IS invalidated due to component changes, the existing
+        circuit.json is preserved as circuit_pending.json so it can be
+        re-validated against the updated design without re-running the LLM.
+        """
+        old_design = self.read_artifact("design.json")
+        if _components_changed(old_design, new_design):
+            circuit_data = self.read_artifact("circuit.json")
+            if circuit_data and not self.has_artifact("circuit_pending.json"):
+                self.write_artifact("circuit_pending.json", circuit_data)
+            return self.invalidate_downstream("design")
+        return self.invalidate_downstream("circuit")
 
 
-class _BatchUpdate:
-    """Context manager returned by :meth:`Session.batch_update`."""
+def _component_signature(design: dict | None) -> set[tuple]:
+    """Extract a hashable set of (instance_id, catalog_id, config, mounting_style)
+    from ui_placements, ignoring positional fields."""
+    if not design:
+        return set()
+    sigs = set()
+    for p in design.get("ui_placements", []):
+        config = p.get("config")
+        config_key = tuple(sorted(config.items())) if isinstance(config, dict) else config
+        sigs.add((
+            p.get("instance_id"),
+            p.get("catalog_id"),
+            config_key,
+            p.get("mounting_style"),
+        ))
+    return sigs
 
-    def __init__(self, session: Session):
-        self._session = session
 
-    def __enter__(self):
-        self._session._batch_depth += 1
-        return self._session
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self._session._batch_depth -= 1
-        if self._session._batch_depth == 0:
-            self._session._do_save()
-        return False  # don't suppress exceptions
+def _components_changed(old_design: dict | None, new_design: dict | None) -> bool:
+    """Return True if components were added, removed, or changed values."""
+    return _component_signature(old_design) != _component_signature(new_design)
 
 
 def _generate_session_id() -> str:
@@ -182,21 +271,19 @@ def load_session(session_id: str) -> Session | None:
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError):
         return None
-    try:
-        return Session(
-            id=meta["id"],
-            path=path,
-            created=meta["created"],
-            last_modified=meta["last_modified"],
-            description=meta.get("description", ""),
-            name=meta.get("name", ""),
-            pipeline_state=meta.get("pipeline_state", {}),
-            pipeline_errors=meta.get("pipeline_errors", {}),
-            version=meta.get("version", 0),
-        )
-    except (KeyError, TypeError) as e:
-        log.warning("Corrupted session.json for %s: %s", session_id, e)
-        return None
+    return Session(
+        id=meta["id"],
+        path=path,
+        created=meta["created"],
+        last_modified=meta["last_modified"],
+        description=meta.get("description", ""),
+        name=meta.get("name", ""),
+        printer_id=meta.get("printer_id", DEFAULT_PRINTER),
+        filament_id=meta.get("filament_id", DEFAULT_FILAMENT),
+        model_id=meta.get("model_id", "medium"),
+        pipeline_state=meta.get("pipeline_state", {}),
+        pipeline_errors=meta.get("pipeline_errors", {}),
+    )
 
 
 def list_sessions() -> list[dict]:
@@ -218,11 +305,9 @@ def list_sessions() -> list[dict]:
                 "last_modified": meta["last_modified"],
                 "description": meta.get("description", ""),
                 "name": meta.get("name", ""),
+                "printer_id": meta.get("printer_id", DEFAULT_PRINTER),
                 "pipeline_state": meta.get("pipeline_state", {}),
-                "pipeline_errors": meta.get("pipeline_errors", {}),
-                "version": meta.get("version", 0),
             })
-        except (json.JSONDecodeError, OSError, KeyError, TypeError) as e:
-            log.warning("Skipping corrupted session %s: %s", d.name, e)
+        except (json.JSONDecodeError, OSError):
             continue
     return sessions

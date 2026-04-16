@@ -5,6 +5,7 @@ import { setData as setViewportData } from './viewport.js';
 import { enableGuideBtn } from './guide.js';
 import { enableRoutingTab, markRoutingStale } from './routing.js';
 import { refreshSession } from './session.js';
+import { sendDesignPrompt } from './design.js';
 
 function addStaleBanner(el, msg) {
     if (!el) return;
@@ -91,11 +92,31 @@ export async function runPlacement() {
                 rerun.textContent = '❌ Failed';
             }
             showStatus(`Placement failed: ${msg}`, true);
-            renderError(msg);
+            renderError(msg, err.detail);
             return;
         }
 
-        const data = await res.json();
+        // Poll until placement completes (async backend)
+        showStatus('Placing components…');
+        let poll;
+        for (let i = 0; i < 120; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            const pr = await fetch(`${API}/api/session/placement/status?session=${encodeURIComponent(state.session)}`);
+            poll = await pr.json();
+            if (poll.status === 'done' || poll.status === 'error' || poll.status === 'idle') break;
+            if (poll.message) showStatus(`Placing… ${poll.message}`);
+        }
+        if (poll?.status === 'error') {
+            const msg = poll.message || poll.detail?.reason || 'Placement failed';
+            showStatus(`Placement failed: ${msg}`, true);
+            renderError(msg, poll.detail);
+            return;
+        }
+
+        // Fetch the full result
+        const resultRes = await fetch(`${API}/api/session/placement/result?session=${encodeURIComponent(state.session)}`);
+        if (!resultRes.ok) { showStatus('Failed to load result', true); return; }
+        const data = await resultRes.json();
         renderResult(data);
         setViewportData('placement', data);
         stopTabFlash();
@@ -231,10 +252,47 @@ function renderResult(data) {
     }
 }
 
-function renderError(msg) {
+function renderError(msg, detail) {
     const el = infoDiv();
     if (!el) return;
-    el.innerHTML = `<div class="placement-error"><strong>Placement failed</strong><p>${esc(msg)}</p></div>`;
+
+    showResultView();
+
+    el.innerHTML = '';
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'placement-error';
+    errorDiv.innerHTML = `<strong>Placement failed</strong><p>${esc(msg)}</p>`;
+
+    if (detail?.responsible_agent === 'design') {
+        const informBtn = document.createElement('button');
+        informBtn.className = 'placement-toolbar-rerun';
+        informBtn.textContent = '\u270D Inform the Designer';
+        informBtn.style.marginTop = '8px';
+        informBtn.addEventListener('click', () => {
+            // Switch to design tab and send feedback
+            import('./main.js').then(m => {
+                m.switchStep('design');
+                // Populate chat input with feedback message and send
+                const input = document.getElementById('chat-input');
+                if (input) {
+                    input.value = `The manufacturing pipeline failed at "Component Placement" with the following error:\n\n${msg}\n\nPlease fix the issue in your design and resubmit.`;
+                    sendDesignPrompt();
+                }
+            });
+        });
+        errorDiv.appendChild(informBtn);
+    }
+
+    // Always add a re-run button
+    const rerunBtn = document.createElement('button');
+    rerunBtn.className = 'placement-toolbar-rerun';
+    rerunBtn.textContent = '\u21BB Re-run Placer';
+    rerunBtn.style.marginTop = '8px';
+    rerunBtn.style.marginLeft = '8px';
+    rerunBtn.addEventListener('click', runPlacement);
+    errorDiv.appendChild(rerunBtn);
+
+    el.appendChild(errorDiv);
 }
 
 /**

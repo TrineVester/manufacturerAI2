@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+from shapely.geometry import Polygon
+
 from src.pipeline.design.models import Net
 
-from .models import Trace, RoutingResult
+from .models import Trace, InflatedTrace, RoutingResult
 
 
 def routing_to_dict(result: RoutingResult) -> dict:

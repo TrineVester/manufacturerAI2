@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from shapely.geometry import Polygon
+
 from src.pipeline.config import TRACE_RULES
 
 
@@ -19,12 +21,23 @@ class Trace:
 
 
 @dataclass
+class InflatedTrace:
+    """A trace after Voronoi inflation — variable-width 2D footprint."""
+
+    net_id: str
+    centreline: list[tuple[float, float]]
+    polygon: Polygon
+
+
+@dataclass
 class RoutingResult:
     """Complete routing result, ready for the SCAD generator."""
 
     traces: list[Trace]
     pin_assignments: dict[str, str]     # "mcu_1:gpio" -> "mcu_1:PD2"
     failed_nets: list[str]
+    debug_grids: list[dict] = field(default_factory=list)
+    inflated_traces: list[InflatedTrace] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -54,14 +67,10 @@ class RouterConfig:
 
     # ── Router-only knobs ──────────────────────────────────────
     turn_penalty: int = 5                # A* cost penalty for changing direction
-    crossing_penalty: int = 500          # A* cost for crossing an occupied cell (rip-up)
-
-    max_rip_up_attempts: int = 200       # outer random-ordering attempts (pruning skips dead orderings)
-    inner_rip_up_limit: int = 100        # inner rip-up iterations per attempt
-    time_budget_s: float = 60.0          # maximum wall-clock time for routing
-    elite_pool_size: int = 5             # best solutions retained for crossover/refine
-    stall_limit: int = 15               # attempts without improvement before escalation
-    drc_repair_rounds: int = 5           # post-routing clearance repair iterations
+    crossing_cost: int = 50              # A* cost for traversing foreign trace cells (exploration only)
+    max_improve_iterations: int = 60     # iterative improvement rounds
+    stall_limit: int = 20               # stop after this many rounds with no improvement
+    elite_pool_size: int = 5             # number of top solutions kept for crossover
 
 
 # Module-level defaults (used when no RouterConfig is passed)
@@ -73,8 +82,3 @@ TRACE_CLEARANCE_MM = _DEFAULT_CFG.trace_clearance_mm
 EDGE_CLEARANCE_MM = _DEFAULT_CFG.edge_clearance_mm
 
 TURN_PENALTY = _DEFAULT_CFG.turn_penalty
-CROSSING_PENALTY = _DEFAULT_CFG.crossing_penalty
-
-MAX_RIP_UP_ATTEMPTS = _DEFAULT_CFG.max_rip_up_attempts
-INNER_RIP_UP_LIMIT = _DEFAULT_CFG.inner_rip_up_limit
-TIME_BUDGET_S = _DEFAULT_CFG.time_budget_s

@@ -82,7 +82,11 @@ function createScadScene(container) {
     scene.add(grid);
 
     let meshGroup = null;
+    let extrasGroup = null;
     let animId = null;
+    // Shared translation offset so extras align with the enclosure
+    let _enclosureCentre = new THREE.Vector3();
+    let _enclosureMinY = 0;
 
     function animate() {
         animId = requestAnimationFrame(animate);
@@ -116,12 +120,18 @@ function createScadScene(container) {
             url,
             (geometry) => {
                 geometry.computeVertexNormals();
+
+                // OpenSCAD uses Z-up; Three.js uses Y-up — rotate to lay flat
+                geometry.rotateX(-Math.PI / 2);
+
                 geometry.computeBoundingBox();
 
                 // Centre + position the mesh just above the grid
                 const box = geometry.boundingBox;
                 const centre = new THREE.Vector3();
                 box.getCenter(centre);
+                _enclosureCentre.copy(centre);
+                _enclosureMinY = box.min.y;
                 geometry.translate(-centre.x, -box.min.y, -centre.z);
 
                 const mat = new THREE.MeshPhongMaterial({
@@ -154,13 +164,49 @@ function createScadScene(container) {
         );
     }
 
+    function loadExtras(url) {
+        if (extrasGroup) { scene.remove(extrasGroup); extrasGroup = null; }
+        const loader = new STLLoader();
+        loader.load(
+            url,
+            (geometry) => {
+                geometry.computeVertexNormals();
+                geometry.rotateX(-Math.PI / 2);
+                // Apply the same translation as the enclosure so they align
+                geometry.translate(-_enclosureCentre.x, -_enclosureMinY, -_enclosureCentre.z);
+                const mat = new THREE.MeshPhongMaterial({
+                    color: 0xd29922,
+                    shininess: 50,
+                    specular: 0x664422,
+                    side: THREE.DoubleSide,
+                });
+                const mesh = new THREE.Mesh(geometry, mat);
+                extrasGroup = new THREE.Group();
+                extrasGroup.add(mesh);
+                scene.add(extrasGroup);
+            },
+            undefined,
+            (err) => console.error('STLLoader extras error:', err),
+        );
+    }
+
+    function setExtrasVisible(visible) {
+        if (extrasGroup) extrasGroup.visible = visible;
+    }
+
+    function hasExtras() { return !!extrasGroup; }
+
     return {
         loadStl,
+        loadExtras,
+        setExtrasVisible,
+        hasExtras,
         resize,
         destroy() {
             cancelAnimationFrame(animId);
             ro.disconnect();
             if (meshGroup) { scene.remove(meshGroup); meshGroup = null; }
+            if (extrasGroup) { scene.remove(extrasGroup); extrasGroup = null; }
             if (canvas.parentElement === container) container.removeChild(canvas);
         },
     };
@@ -296,6 +342,44 @@ function renderView(el, data) {
         el.appendChild(host);
         _scene = createScadScene(host);
         _scene.loadStl(stlUrl);
+
+        // Extras toggle button — load extras.stl (buttons, battery hatch, etc.)
+        const extrasUrl = stlUrl.replace('/scad/stl?', '/scad/extras-stl?');
+        const toolbar = document.createElement('div');
+        toolbar.style.cssText = [
+            'position:absolute; bottom:12px; left:50%; transform:translateX(-50%);',
+            'display:flex; gap:8px; z-index:10;',
+        ].join('');
+        host.appendChild(toolbar);
+
+        const extrasBtn = document.createElement('button');
+        extrasBtn.textContent = '🔩 Show Extras';
+        extrasBtn.style.cssText = [
+            'padding:6px 16px; border:1px solid var(--border,#2e3d4f);',
+            'background:var(--surface-2,#161b22); color:var(--text,#e6edf3);',
+            'border-radius:6px; cursor:pointer; font-size:13px;',
+            'backdrop-filter:blur(6px); transition:background 0.15s;',
+        ].join('');
+        let extrasVisible = false;
+        let extrasLoaded = false;
+        extrasBtn.addEventListener('click', () => {
+            extrasVisible = !extrasVisible;
+            if (extrasVisible && !extrasLoaded) {
+                _scene.loadExtras(extrasUrl);
+                extrasLoaded = true;
+            } else {
+                _scene.setExtrasVisible(extrasVisible);
+            }
+            extrasBtn.textContent = extrasVisible ? '🔩 Hide Extras' : '🔩 Show Extras';
+            extrasBtn.style.background = extrasVisible
+                ? 'var(--surface-raised,#2a2a2a)' : 'var(--surface-2,#161b22)';
+        });
+        toolbar.appendChild(extrasBtn);
+
+        // Probe whether extras.stl exists; hide button if not
+        fetch(extrasUrl, { headers: { 'Range': 'bytes=0-0' } }).then(r => {
+            if (!r.ok) toolbar.remove();
+        }).catch(() => toolbar.remove());
     }
 }
 

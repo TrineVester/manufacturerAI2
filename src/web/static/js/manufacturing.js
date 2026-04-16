@@ -10,6 +10,42 @@ const statusSpan = () => document.getElementById('manufacturing-status');
 const infoDiv    = () => document.getElementById('manufacturing-info');
 const runBtn     = () => document.getElementById('btn-run-manufacturing');
 
+// ── Printer / filament selection ─────────────────────────────
+
+export function initManufacturingConfig() {
+    const printerSel  = document.getElementById('mfg-printer-select');
+    const filamentSel = document.getElementById('mfg-filament-select');
+    if (!printerSel || !filamentSel) return;
+
+    printerSel.addEventListener('change', async () => {
+        if (!state.session) return;
+        try {
+            await fetch(
+                `${API}/api/sessions/${encodeURIComponent(state.session)}/printer?printer_id=${encodeURIComponent(printerSel.value)}`,
+                { method: 'PUT' },
+            );
+        } catch { /* best effort */ }
+    });
+
+    filamentSel.addEventListener('change', async () => {
+        if (!state.session) return;
+        try {
+            await fetch(
+                `${API}/api/sessions/${encodeURIComponent(state.session)}/filament?filament_id=${encodeURIComponent(filamentSel.value)}`,
+                { method: 'PUT' },
+            );
+        } catch { /* best effort */ }
+    });
+}
+
+export function syncManufacturingConfig(sessionData) {
+    if (!sessionData) return;
+    const printerSel  = document.getElementById('mfg-printer-select');
+    const filamentSel = document.getElementById('mfg-filament-select');
+    if (printerSel && sessionData.printer_id) printerSel.value = sessionData.printer_id;
+    if (filamentSel && sessionData.filament_id) filamentSel.value = sessionData.filament_id;
+}
+
 /**
  * Enable the manufacturing nav tab. If flash=true, pulse to attract attention.
  */
@@ -93,15 +129,26 @@ export async function runManufacturing() {
         // 2. Poll G-code status
         await pollGcodeUntilDone();
 
-        // 3. Run bitmap generation (synchronous)
-        showStatus('Generating trace bitmap…');
+        // 3. Run bitmap generation (async)
+        showStatus('Generating trace bitmap\u2026');
         const bmRes = await fetch(
             `${API}/api/session/manufacturing/bitmap?session=${encodeURIComponent(state.session)}`,
             { method: 'POST' },
         );
         let bitmapData = null;
         if (bmRes.ok) {
-            bitmapData = await bmRes.json();
+            // Poll status until bitmap done
+            for (let i = 0; i < 120; i++) {
+                await new Promise(r => setTimeout(r, 1000));
+                const pr = await fetch(`${API}/api/session/manufacturing/bitmap/status?session=${encodeURIComponent(state.session)}`);
+                const poll = await pr.json();
+                if (poll.status === 'done' || poll.status === 'error' || poll.status === 'idle') break;
+            }
+            // Fetch the full bitmap result
+            try {
+                const bmGet = await fetch(`${API}/api/session/manufacturing/bitmap?session=${encodeURIComponent(state.session)}`);
+                if (bmGet.ok) bitmapData = await bmGet.json();
+            } catch { /* optional */ }
         }
 
         // 4. Fetch manifest

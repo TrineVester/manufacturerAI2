@@ -109,7 +109,27 @@ export async function runRouting() {
             return;
         }
 
-        const data = await res.json();
+        // Poll until routing completes (async backend)
+        showStatus('Routing traces…');
+        let poll;
+        for (let i = 0; i < 300; i++) {
+            await new Promise(r => setTimeout(r, 1000));
+            const pr = await fetch(`${API}/api/session/routing/status?session=${encodeURIComponent(state.session)}`);
+            poll = await pr.json();
+            if (poll.status === 'done' || poll.status === 'error' || poll.status === 'idle') break;
+            if (poll.message) showStatus(`Routing… ${poll.message}`);
+        }
+        if (poll?.status === 'error') {
+            const msg = poll.message || poll.detail?.reason || 'Routing failed';
+            showStatus(`Routing failed: ${msg}`, true);
+            renderError(msg);
+            return;
+        }
+
+        // Fetch the full result
+        const resultRes = await fetch(`${API}/api/session/routing/result?session=${encodeURIComponent(state.session)}`);
+        if (!resultRes.ok) { showStatus('Failed to load result', true); return; }
+        const data = await resultRes.json();
         renderResult(data);
         setViewportData('routing', data);
         stopTabFlash();

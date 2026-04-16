@@ -27,25 +27,39 @@ class Body:
 
 
 @dataclass
+class SwitchActuator:
+    """Dimensions of the switch actuator the custom button snaps onto."""
+    total_height_mm: float          # total switch height from PCB surface
+    base_height_mm: float           # height of the square base portion
+    cylinder_height_mm: float       # height of the cylinder on top of the base
+    cylinder_diameter_mm: float     # outer diameter of the top cylinder
+
+
+@dataclass
 class Cap:
     diameter_mm: float
     height_mm: float
     hole_clearance_mm: float
+    actuator: SwitchActuator | None = None
 
 
 @dataclass
-class Hatch:
-    enabled: bool
-    clearance_mm: float
-    thickness_mm: float
+class ExtraPart:
+    """A separate part printed on the same build plate alongside the enclosure.
 
+    Geometry is described by shape + dimensions.  The generator renders
+    any ExtraPart without needing to know its purpose.
 
-@dataclass
-class SoundHoles:
-    enabled: bool
-    pattern: str = "grid"              # "grid" | "ring"
-    hole_diameter_mm: float = 1.5
-    hole_spacing_mm: float = 3.0
+    Special case: shape="button" delegates to the complex button generator
+    (socket + stem + cap with surface tilt) since that cannot be described
+    by simple extrusion.
+    """
+    label: str                          # human-readable, e.g. "battery hatch"
+    shape: str                          # "rect" | "circle" | "button"
+    width_mm: float | None = None
+    length_mm: float | None = None
+    thickness_mm: float | None = None
+    diameter_mm: float | None = None
 
 
 @dataclass
@@ -55,8 +69,22 @@ class Mounting:
     blocks_routing: bool
     keepout_margin_mm: float
     cap: Cap | None = None
-    hatch: Hatch | None = None
-    sound_holes: SoundHoles | None = None
+    installed_height_mm: float | None = None  # height of component top above cavity floor when installed (for through-hole DIP etc.)
+    extras: list[ExtraPart] = field(default_factory=list)
+
+
+@dataclass
+class PinShape:
+    """Optional non-circular pin geometry.
+
+    type:
+      "circle" — default round hole (uses Pin.hole_diameter_mm).
+      "rect"   — rectangular pad / contact area.
+      "slot"   — elongated slot (width × length, rounded ends).
+    """
+    type: str = "circle"                # "circle" | "rect" | "slot"
+    width_mm: float | None = None       # rect / slot width
+    length_mm: float | None = None      # rect / slot length
 
 
 @dataclass
@@ -69,9 +97,7 @@ class Pin:
     description: str
     voltage_v: float | None = None
     current_max_ma: float | None = None
-    shape: str = "round"                # "round" | "rect" | "slot"
-    shape_width_mm: float | None = None # for rect/slot: width (x dimension)
-    shape_length_mm: float | None = None  # for rect/slot: length (y dimension)
+    shape: PinShape | None = None       # None → default circle from hole_diameter_mm
 
 
 @dataclass
@@ -85,12 +111,28 @@ class PinGroup:
 
 
 @dataclass
-class ExtraPart:
-    """A companion printed piece (e.g. button cap, battery door)."""
-    id: str
-    name: str
-    description: str = ""
-    scad_module: str = ""               # OpenSCAD module name to generate shape
+class ScadPattern:
+    """Repeat pattern for a scad feature (e.g. grid of sound holes)."""
+    type: str                           # "grid"
+    spacing_mm: float
+    clip_to_body: bool = True
+
+
+@dataclass
+class ScadFeature:
+    """Additional cutout feature described in catalog JSON."""
+    shape: str                          # "rect" | "circle"
+    label: str
+    position_mm: tuple[float, float]    # relative to component center
+    width_mm: float | None = None       # rect
+    length_mm: float | None = None      # rect
+    diameter_mm: float | None = None    # circle
+    depth_mm: float | None = None       # override; else uses cavity_depth
+    z_anchor: str = "cavity_start"      # "ground" | "floor" | "cavity_start" | "ceil_start"
+    z_center_mm: float | None = None    # explicit Z center offset from anchor (for rotated features)
+    through_surface: bool = False       # cut through dome (e.g. shaft hole)
+    rotate: tuple[float, float, float] | None = None  # [rx, ry, rz] 3-D rotation
+    pattern: ScadPattern | None = None  # repeat pattern (e.g. grid of holes)
 
 
 @dataclass
@@ -102,11 +144,26 @@ class Component:
     body: Body
     mounting: Mounting
     pins: list[Pin]
+    pin_length_mm: float | None = None
     internal_nets: list[list[str]] = field(default_factory=list)
     pin_groups: list[PinGroup] | None = None
     configurable: dict | None = None
-    extra_parts: list[ExtraPart] = field(default_factory=list)
+    scad_features: list[ScadFeature] = field(default_factory=list)
     source_file: str = ""               # path of the JSON file (for error reporting)
+
+    @property
+    def protrusion_height_mm(self) -> float:
+        """Tallest point above the cavity floor, including cap/actuator.
+
+        Used for pause-Z calculation so the nozzle clears the full
+        component (not just the body) after insertion.
+        """
+        base = self.mounting.installed_height_mm or self.body.height_mm
+        cap = self.mounting.cap
+        if cap is not None and cap.actuator is not None:
+            top = cap.actuator.total_height_mm + cap.height_mm
+            return max(top, base)
+        return base
 
 
 @dataclass

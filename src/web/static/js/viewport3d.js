@@ -118,6 +118,8 @@ export function create3DScene(container) {
 
     // ── Scene3D public API ──────────────────────────────────────
 
+    let _firstUpdate = true;
+
     return {
         update(data) {
             if (contentGroup) {
@@ -133,18 +135,22 @@ export function create3DScene(container) {
             contentGroup = buildSceneContent(data);
             scene.add(contentGroup);
 
-            // Fit camera to content bounding box
-            const box = new THREE.Box3().setFromObject(contentGroup);
-            if (!box.isEmpty()) {
-                const center = box.getCenter(new THREE.Vector3());
-                const size   = box.getSize(new THREE.Vector3());
-                const maxDim = Math.max(size.x, size.y, size.z);
-                const dist   = maxDim * 1.1 / Math.tan((camera.fov / 2) * Math.PI / 180);
-                // Classic 30° elevation product-CAD angle — more frontal, less top-down
-                camera.position.set(center.x + dist * 0.65, center.y + dist * 0.50, center.z + dist * 0.85);
-                camera.lookAt(center);
-                controls.target.copy(center);
-                controls.update();
+            // Fit camera only on first render — subsequent updates
+            // (e.g. edge-profile tweaks) preserve the user's view.
+            if (_firstUpdate) {
+                _firstUpdate = false;
+                const box = new THREE.Box3().setFromObject(contentGroup);
+                if (!box.isEmpty()) {
+                    const center = box.getCenter(new THREE.Vector3());
+                    const size   = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z);
+                    const dist   = maxDim * 1.1 / Math.tan((camera.fov / 2) * Math.PI / 180);
+                    // Classic 30° elevation product-CAD angle — more frontal, less top-down
+                    camera.position.set(center.x + dist * 0.65, center.y + dist * 0.50, center.z + dist * 0.85);
+                    camera.lookAt(center);
+                    controls.target.copy(center);
+                    controls.update();
+                }
             }
         },
 
@@ -232,6 +238,16 @@ export function buildSceneContent(data) {
         }
         const placed = { ...comp, x_mm: x, y_mm: y, rotation_deg: rot };
         const mesh = buildComponentBox(placed, FLOOR_Z, PALETTE[i % PALETTE.length]);
+        if (mesh) group.add(mesh);
+    });
+
+    // 3b. UI-placed components (design step) — render enriched ui_placements
+    //     that weren't already covered by the components array above.
+    const renderedIds = new Set(components.map(c => c.instance_id));
+    (data.ui_placements ?? []).forEach((up, i) => {
+        if (renderedIds.has(up.instance_id)) return;  // already rendered
+        if (up.x_mm == null || up.y_mm == null || !up.body) return;
+        const mesh = buildComponentBox(up, FLOOR_Z, PALETTE[(components.length + i) % PALETTE.length]);
         if (mesh) group.add(mesh);
     });
 

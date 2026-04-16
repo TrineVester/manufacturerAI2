@@ -1,4 +1,4 @@
-"""Main placement engine — grid-search placer with hard/soft constraints."""
+"""Main placement engine — candidate-based placer with hard/soft constraints."""
 
 from __future__ import annotations
 
@@ -21,8 +21,12 @@ from .models import (
     GRID_STEP_MM, VALID_ROTATIONS, MIN_EDGE_CLEARANCE_MM,
     ROUTING_CHANNEL_MM, MIN_PIN_CLEARANCE_MM,
 )
-from .nets import build_net_graph, count_shared_nets, build_placement_groups
-from .scoring import Placed, score_candidate, compute_placed_segments
+from .nets import build_net_graph, count_shared_nets, build_placement_groups, resolve_pin_positions
+from .models import Placed
+from .candidates import generate_candidates
+from .congestion import CongestionGrid
+from .scoring import score_candidate
+from .annealing import sa_refine
 
 
 log = logging.getLogger(__name__)
@@ -42,26 +46,32 @@ def _edge_direction(
 
 def _edge_rotation(
     p1: tuple[float, float], p2: tuple[float, float],
-) -> int:
-    """Compute the nearest 90° rotation for a component on an edge.
+) -> float:
+    """Return the edge tangent angle in degrees (0–360).
 
-    The component's "forward" direction should point outward through
-    the wall.  For clockwise winding, the outward normal is to the
-    right of the edge direction.
+    This is the direction of the vector from *p1* to *p2*.
+    The component's local +X axis aligns with this direction
+    (along the wall).  For CW-wound outlines the outward
+    normal points to the right of the edge direction, so
+    local −Y faces the enclosure interior.
     """
     dx = p2[0] - p1[0]
     dy = p2[1] - p1[1]
     angle = math.degrees(math.atan2(dy, dx))
-    normal_angle = angle - 90
-    snapped = round(normal_angle / 90) * 90
-    return int(snapped) % 360
+    return angle % 360
 
 
 def _snap_to_edge(
     x_mm: float, y_mm: float,
     outline: Outline, edge_index: int,
-) -> tuple[float, float, int]:
+    inward_offset: float = 0.0,
+) -> tuple[float, float, float]:
     """Snap a point to the nearest position on an outline edge.
+
+    If *inward_offset* is given the snapped point is shifted toward
+    the interior of the outline by that many mm (along the inward
+    normal, which for clockwise winding is the *left* side of the
+    edge direction vector).
 
     Returns (snapped_x, snapped_y, rotation_deg).
     """
@@ -75,6 +85,15 @@ def _snap_to_edge(
     snap_x = p1[0] + t * dx
     snap_y = p1[1] + t * dy
     rotation = _edge_rotation(p1, p2)
+
+    if inward_offset:
+        length = math.sqrt(length_sq)
+        # Inward normal (left of edge direction for CW winding)
+        nx = dy / length
+        ny = -dx / length
+        snap_x -= nx * inward_offset
+        snap_y -= ny * inward_offset
+
     return (snap_x, snap_y, rotation)
 
 
@@ -90,8 +109,8 @@ def place_components(
     """Place all components inside the outline.
 
     UI components are fixed at their agent-specified positions.
-    Non-UI components are auto-placed via exhaustive grid search,
-    optimising for net proximity, uniform clearance, and compactness.
+    Non-UI components are auto-placed via candidate search around
+    net-connected neighbours and strip-packing fallback.
 
     Parameters
     ----------
@@ -100,7 +119,7 @@ def place_components(
     catalog : CatalogResult
         The loaded component catalog.
     grid_step : float
-        Grid scan resolution in mm (default 1.0).
+        Grid step for fallback scan (mm, default 1.0).
 
     Returns
     -------
@@ -113,7 +132,10 @@ def place_components(
         If a component cannot be legally placed.
     """
     catalog_map = {c.id: c for c in catalog.components}
-    outline_poly = Polygon(design.outline.vertices)
+    outline_poly = Polygon(
+        design.outline.vertices,
+        design.outline.hole_vertices or None,
+    )
     outline_verts = design.outline.vertices
     xmin, ymin, xmax, ymax = outline_poly.bounds
     outline_bounds = (xmin, ymin, xmax, ymax)
@@ -121,6 +143,36 @@ def place_components(
     if not outline_poly.is_valid or outline_poly.area <= 0:
         raise PlacementError("_outline", "_outline",
                              "Outline polygon is invalid or has zero area")
+
+    # ── Raised-floor detection ─────────────────────────────────────
+    # If any vertex has z_bottom that would push the floor at or above the
+    # trace-layer height (FLOOR_MM), components cannot be placed there.
+    _has_raised_bottom = any(
+        getattr(p, 'z_bottom', None) for p in design.outline.points
+    ) or design.enclosure.bottom_surface is not None
+    _floor_threshold: float = 0.0
+    _pcb_contour_verts: list[tuple[float, float]] | None = None
+    if _has_raised_bottom:
+        from src.pipeline.design.height_field import (
+            blended_bottom_height, sample_bottom_height_grid,
+            pcb_contour_from_bottom_grid,
+        )
+        from src.pipeline.config import FLOOR_MM
+        _floor_threshold = FLOOR_MM - 0.1
+
+        # Derive PCB contour polygon so edge clearance can also be
+        # enforced against the flat→raised boundary, not just the
+        # raw outline.  Without this a component could sit right at
+        # the transition line with zero clearance.
+        _bot_grid = sample_bottom_height_grid(design.outline, design.enclosure)
+        if _bot_grid is not None:
+            _contour_pts = pcb_contour_from_bottom_grid(
+                _bot_grid, design.outline, FLOOR_MM,
+            )
+            if _contour_pts is not None and len(_contour_pts) >= 3:
+                _pcb_contour_verts = [(p[0], p[1]) for p in _contour_pts]
+                log.info("PCB contour edge-clearance polygon: %d vertices",
+                         len(_pcb_contour_verts))
 
     # A bottom fillet or chamfer curves the wall inward at floor level by
     # exactly size_mm.  Components placed within that zone would sit inside
@@ -133,18 +185,27 @@ def place_components(
 
     # Build net connectivity graph
     net_graph = build_net_graph(design.nets)
-    outline_area = outline_poly.area
+
+    # Build coarse congestion grid for routing-aware scoring
+    cg = CongestionGrid(outline_poly)
 
     # Resolve effective mounting style for each instance
+    # Priority: UIPlacement.mounting_style > ComponentInstance.mounting_style > catalog default
     effective_style: dict[str, str] = {}
+    up_style_map = {up.instance_id: up.mounting_style for up in design.ui_placements if up.mounting_style}
     for ci in design.components:
         cat = catalog_map.get(ci.catalog_id)
         if cat:
-            effective_style[ci.instance_id] = ci.mounting_style or cat.mounting.style
+            effective_style[ci.instance_id] = (
+                up_style_map.get(ci.instance_id)
+                or ci.mounting_style
+                or cat.mounting.style
+            )
 
     # ── 1. Place UI components (fixed positions) ───────────────────
 
     placed: list[Placed] = []
+    placed_map: dict[str, Placed] = {}
     ui_ids: set[str] = set()
 
     for up in design.ui_placements:
@@ -153,21 +214,29 @@ def place_components(
         style = effective_style.get(ci.instance_id, cat.mounting.style)
 
         if style == "side" and up.edge_index is not None:
-            x, y, rot = _snap_to_edge(up.x_mm, up.y_mm, design.outline, up.edge_index)
+            is_reoriented = cat.mounting.style != "side"
+            if is_reoriented:
+                half_depth = (cat.body.height_mm or 1.0) / 2
+            else:
+                half_depth = (cat.body.length_mm or 1.0) / 2
+            x, y, rot = _snap_to_edge(up.x_mm, up.y_mm, design.outline, up.edge_index, inward_offset=half_depth)
         else:
             x, y, rot = up.x_mm, up.y_mm, 0
 
         hw, hh = footprint_halfdims(cat, rot)
         ehw, ehh = footprint_envelope_halfdims(cat, rot)
-        placed.append(Placed(
+        p = Placed(
             instance_id=ci.instance_id,
             catalog_id=ci.catalog_id,
             x=x, y=y, rotation=rot,
             hw=hw, hh=hh,
             keepout=cat.mounting.keepout_margin_mm,
             env_hw=ehw, env_hh=ehh,
-        ))
+        )
+        placed.append(p)
+        placed_map[ci.instance_id] = p
         ui_ids.add(ci.instance_id)
+        cg.block_component(ci.instance_id, x, y, ehw, ehh)
         log.info("UI-placed %s at (%.1f, %.1f) rot=%d°",
                  ci.instance_id, x, y, rot)
 
@@ -184,100 +253,63 @@ def place_components(
     }
     groups = build_placement_groups(to_place_ids, net_graph, area_map)
 
-    # Build a lookup: instance_id -> set of group-mates (excluding self)
-    group_mates_map: dict[str, set[str]] = {}
-    for group in groups:
-        group_set = set(group)
-        for iid in group:
-            group_mates_map[iid] = group_set - {iid}
-
-    # Flatten groups into a single ordered list, preserving group
-    # contiguity and hub-first ordering within each group.
     ordered_ids = [iid for group in groups for iid in group]
     ci_map = {ci.instance_id: ci for ci in design.components}
     to_place = [ci_map[iid] for iid in ordered_ids]
 
-    # ── 3. Auto-place each component via grid search ───────────────
-    # Precompute for speed: prepared polygon for O(1) containment,
-    # shared-nets cache (persists across components), and squared
-    # pin clearance threshold to avoid sqrt in inner loop.
+    # ── 3. Auto-place each component ──────────────────────────────
+
     prep_poly = shapely_prep(outline_poly)
-    shared_nets_cache: dict[tuple[str, str], int] = {}
     _min_pin_sq = MIN_PIN_CLEARANCE_MM * MIN_PIN_CLEARANCE_MM
+
+    # Fast-path: detect axis-aligned rectangular outlines
+    from .geometry import _is_aabb
+    _outline_aabb = _is_aabb(outline_verts)
+
     for ci in to_place:
         cat = catalog_map[ci.catalog_id]
         style = effective_style.get(ci.instance_id, cat.mounting.style)
         keepout = cat.mounting.keepout_margin_mm
 
-        # Precompute existing virtual wire segments between all
-        # already-placed components (for crossing detection).
-        existing_segments = compute_placed_segments(
-            placed, catalog_map, net_graph,
-        )
-
-        # Precompute placed-component pin world positions — constant
-        # during this component's grid scan (saves trig per cell).
-        placed_pin_positions: dict[str, list[tuple[float, float]]] = {}
-        for _p in placed:
-            _p_cat = catalog_map.get(_p.catalog_id)
-            if _p_cat is not None:
-                placed_pin_positions[_p.instance_id] = [
-                    pin_world_xy(pin.position_mm, _p.x, _p.y, _p.rotation)
-                    for pin in _p_cat.pins
-                ]
-
         best_pos: tuple[float, float] | None = None
         best_rot = 0
         best_score = -float("inf")
-        best_pass = 0   # which pass found the solution
-        _reject_counts: dict[str, int] = {}  # rejection reasons (last pass only)
 
-        # Three-pass placement strategy (each pass relaxes constraints
-        # further so tight boards can still be placed):
-        #
-        #   Pass 0 — full constraints: routing-channel gaps reserved,
-        #            full keepout margins, normal edge clearance.
-        #   Pass 1 — drop channel-gap reservation.  Routing will have
-        #            to use peripheral paths instead.
-        #   Pass 2 — compact mode: also halve keepout margins (floor
-        #            1 mm) and reduce edge clearance.  Components will
-        #            sit closer together; use only when the outline is
-        #            genuinely too dense for ideal spacing.
+        _placed_pins_world: list[list[tuple[float, float]]] = []
+        for _pp in placed:
+            _pcat = catalog_map.get(_pp.catalog_id)
+            if not _pcat or not _pcat.pins:
+                _placed_pins_world.append([])
+                continue
+            _pc, _ps = math.cos(math.radians(_pp.rotation)), math.sin(math.radians(_pp.rotation))
+            _placed_pins_world.append([
+                (_pp.x + _pin.position_mm[0] * _pc - _pin.position_mm[1] * _ps,
+                 _pp.y + _pin.position_mm[0] * _ps + _pin.position_mm[1] * _pc)
+                for _pin in _pcat.pins
+            ])
+
         _PASSES = [
-            # (ignore_channel_gap, keepout_scale, edge_clearance_mm)
-            # floor_inset is a hard physical minimum — never relaxed.
             (False, 1.0, MIN_EDGE_CLEARANCE_MM + floor_inset),
             (True,  1.0, MIN_EDGE_CLEARANCE_MM + floor_inset),
             (True,  0.5, max(MIN_EDGE_CLEARANCE_MM * 0.5, 0.5) + floor_inset),
         ]
+
         for _pass, (ignore_channel_gap, keepout_scale, edge_clr) in enumerate(_PASSES):
             if best_pos is not None:
                 break
-            _is_last_pass = (_pass == len(_PASSES) - 1)
-            if _is_last_pass:
-                _reject_counts = {}
 
             for rotation in VALID_ROTATIONS:
                 hw, hh = footprint_halfdims(cat, rotation)
                 ehw, ehh = footprint_envelope_halfdims(cat, rotation)
-
-                # Inflated half-dims: the envelope (body + pins) + edge
-                # clearance must fit inside the outline.
                 ihw = ehw + edge_clr
                 ihh = ehh + edge_clr
 
-                # Scan range: outline bounding box shrunk by inflated
-                # half-dims.
-                scan_xmin = xmin + ihw
-                scan_xmax = xmax - ihw
-                scan_ymin = ymin + ihh
-                scan_ymax = ymax - ihh
+                candidates = generate_candidates(
+                    ci.instance_id, cat, rotation, ehw, ehh, ihw, ihh,
+                    placed, placed_map, net_graph, catalog_map,
+                    outline_bounds, edge_clr, grid_step, style,
+                )
 
-                if scan_xmin > scan_xmax or scan_ymin > scan_ymax:
-                    continue
-
-                # Precompute rotated pin offsets (rotation-dependent,
-                # position-independent — just add cx, cy in inner loop).
                 _rad = math.radians(rotation)
                 _cos_r, _sin_r = math.cos(_rad), math.sin(_rad)
                 my_pin_offsets = [
@@ -286,153 +318,127 @@ def place_components(
                     for pin in cat.pins
                 ]
 
-                cx = scan_xmin
-                while cx <= scan_xmax + 1e-6:
-                    cy = scan_ymin
-                    while cy <= scan_ymax + 1e-6:
-                        # Hard constraint 1: inflated footprint inside outline
-                        # Uses prepared polygon for fast repeated containment.
-                        if not prep_poly.contains(
-                            shapely_box(cx - ihw, cy - ihh, cx + ihw, cy + ihh)
-                        ):
-                            if _is_last_pass:
-                                _reject_counts["[outline]"] = _reject_counts.get("[outline]", 0) + 1
-                            cy += grid_step
+                for cx, cy in candidates:
+                    if _outline_aabb is not None:
+                        _oxmin, _oymin, _oxmax, _oymax = _outline_aabb
+                        if (cx - ihw < _oxmin or cx + ihw > _oxmax
+                                or cy - ihh < _oymin or cy + ihh > _oymax):
                             continue
+                    elif not prep_poly.contains(
+                        shapely_box(cx - ihw, cy - ihh, cx + ihw, cy + ihh)
+                    ):
+                        continue
 
-                        # Hard constraint 2: no overlap (using pin envelopes).
-                        # Pass 0: reserve routing channels between nets.
-                        # Pass 1: drop channel reservation (routing adapts).
-                        # Pass 2: also scale down keepout margins.
-                        overlap = False
-                        for p in placed:
-                            _sn_key = (min(ci.instance_id, p.instance_id),
-                                       max(ci.instance_id, p.instance_id))
-                            if _sn_key not in shared_nets_cache:
-                                shared_nets_cache[_sn_key] = count_shared_nets(
-                                    ci.instance_id, p.instance_id, net_graph,
-                                )
-                            n_channels = shared_nets_cache[_sn_key]
-                            channel_gap = (
-                                0.0 if ignore_channel_gap
-                                else n_channels * ROUTING_CHANNEL_MM
-                            )
-                            my_ko  = max(keepout      * keepout_scale, 1.0)
-                            her_ko = max(p.keepout    * keepout_scale, 1.0)
-                            required_gap = max(my_ko, her_ko, channel_gap)
-                            actual_gap = aabb_gap(
-                                cx, cy, ehw, ehh,
-                                p.x, p.y, p.env_hw, p.env_hh,
-                            )
-                            if actual_gap < required_gap:
-                                overlap = True
+                    # Reject positions in the raised-floor zone
+                    # Check body corners AND all pin positions — a pin landing
+                    # in the raised zone can't have traces connected to it.
+                    if _has_raised_bottom:
+                        _raised = False
+                        _check_pts = [
+                            (cx, cy),
+                            (cx - ehw, cy - ehh), (cx + ehw, cy - ehh),
+                            (cx - ehw, cy + ehh), (cx + ehw, cy + ehh),
+                        ]
+                        for _pox, _poy in my_pin_offsets:
+                            _check_pts.append((cx + _pox, cy + _poy))
+                        for _px, _py in _check_pts:
+                            if blended_bottom_height(
+                                _px, _py, design.outline, design.enclosure,
+                            ) >= _floor_threshold:
+                                _raised = True
                                 break
-                        if overlap:
-                            if _is_last_pass:
-                                _blocker_id = next(
-                                    (p.instance_id for p in placed
-                                     if aabb_gap(cx, cy, ehw, ehh, p.x, p.y, p.env_hw, p.env_hh)
-                                     < max(max(keepout * keepout_scale, 1.0),
-                                           max(p.keepout * keepout_scale, 1.0))),
-                                    "[overlap]",
-                                )
-                                _reject_counts[_blocker_id] = _reject_counts.get(_blocker_id, 0) + 1
-                            cy += grid_step
+                        if _raised:
                             continue
 
-                        # Hard constraint 3: minimum edge clearance.
-                        edge_dist = rect_edge_clearance(
-                            cx, cy, ehw, ehh, outline_verts)
-                        if edge_dist < edge_clr:
-                            if _is_last_pass:
-                                _reject_counts["[edge_clearance]"] = _reject_counts.get("[edge_clearance]", 0) + 1
-                            cy += grid_step
+                    overlap = False
+                    for p in placed:
+                        n_channels = count_shared_nets(
+                            ci.instance_id, p.instance_id, net_graph,
+                        )
+                        channel_gap = (
+                            0.0 if ignore_channel_gap
+                            else n_channels * ROUTING_CHANNEL_MM
+                        )
+                        my_ko = max(keepout * keepout_scale, 1.0)
+                        her_ko = max(p.keepout * keepout_scale, 1.0)
+                        required_gap = max(my_ko, her_ko, channel_gap)
+                        actual_gap = aabb_gap(
+                            cx, cy, ehw, ehh,
+                            p.x, p.y, p.env_hw, p.env_hh,
+                        )
+                        if actual_gap < required_gap:
+                            overlap = True
+                            break
+                    if overlap:
+                        continue
+
+                    edge_dist = rect_edge_clearance(
+                        cx, cy, ehw, ehh, outline_verts)
+                    if edge_dist < edge_clr:
+                        continue
+
+                    # Also enforce clearance from the PCB contour
+                    # boundary (flat→raised transition) when present.
+                    if _pcb_contour_verts is not None:
+                        contour_edge_dist = rect_edge_clearance(
+                            cx, cy, ehw, ehh, _pcb_contour_verts)
+                        if contour_edge_dist < edge_clr:
                             continue
-                        # Hard constraint 4: pin-to-pin clearance
-                        # Uses precomputed pin offsets and placed pin
-                        # world positions; squared distance avoids sqrt.
-                        pin_clash = False
-                        my_pins_world = [(cx + ox, cy + oy)
-                                         for ox, oy in my_pin_offsets]
-                        for p in placed:
+
+                    pin_clash = False
+                    my_pins_world = [(cx + ox, cy + oy) for ox, oy in my_pin_offsets]
+                    for _pp, _ppw in zip(placed, _placed_pins_world):
+                        if pin_clash:
+                            break
+                        if not _ppw:
+                            continue
+                        if abs(cx - _pp.x) > ehw + _pp.env_hw + MIN_PIN_CLEARANCE_MM:
+                            continue
+                        if abs(cy - _pp.y) > ehh + _pp.env_hh + MIN_PIN_CLEARANCE_MM:
+                            continue
+                        for opx, opy in _ppw:
                             if pin_clash:
                                 break
-                            _other_pins = placed_pin_positions.get(
-                                p.instance_id, ())
-                            for opx, opy in _other_pins:
-                                if pin_clash:
+                            for mpx, mpy in my_pins_world:
+                                dx, dy = mpx - opx, mpy - opy
+                                if dx * dx + dy * dy < _min_pin_sq:
+                                    pin_clash = True
                                     break
-                                for mpx, mpy in my_pins_world:
-                                    dx, dy = mpx - opx, mpy - opy
-                                    if dx * dx + dy * dy < _min_pin_sq:
-                                        pin_clash = True
-                                        break
-                        if pin_clash:
-                            if _is_last_pass:
-                                _reject_counts["[pin_clearance]"] = _reject_counts.get("[pin_clearance]", 0) + 1
-                            cy += grid_step
-                            continue
-                        # Soft constraints: score position
-                        score = score_candidate(
-                            cx, cy, rotation, hw, hh, keepout,
-                            ci.instance_id, cat,
-                            placed, catalog_map, net_graph,
-                            outline_verts, outline_bounds,
-                            style,
-                            existing_segments,
-                            env_hw=ehw, env_hh=ehh,
-                            outline_area=outline_area,
-                            group_mates=group_mates_map.get(ci.instance_id),
-                        )
+                    if pin_clash:
+                        continue
 
-                        if score > best_score:
-                            best_score = score
-                            best_pos = (cx, cy)
-                            best_rot = rotation
-                            best_pass = _pass
-
-                        cy += grid_step
-                    cx += grid_step
-
-            if best_pos is not None and best_pass > 0:
-                if best_pass == 1:
-                    log.warning(
-                        "Placed %s without routing-channel reservation "
-                        "(pass 2 fallback). Routing may be tighter.",
-                        ci.instance_id,
+                    score = score_candidate(
+                        cx, cy, rotation, ehw, ehh, keepout,
+                        ci.instance_id, cat, placed, placed_map,
+                        catalog_map, net_graph,
+                        outline_verts, outline_bounds, style,
+                        congestion_grid=cg,
+                        pcb_contour_verts=_pcb_contour_verts,
                     )
-                elif best_pass == 2:
-                    log.warning(
-                        "Placed %s in compact mode (pass 3 fallback): "
-                        "keepout margins and edge clearance halved. "
-                        "Components will be close together.",
-                        ci.instance_id,
-                    )
+
+                    if score > best_score:
+                        best_score = score
+                        best_pos = (cx, cy)
+                        best_rot = rotation
 
         if best_pos is None:
             body_w = cat.body.width_mm or cat.body.diameter_mm or 0
             body_h = cat.body.length_mm or cat.body.diameter_mm or 0
-            _top_blockers = sorted(_reject_counts.items(), key=lambda kv: -kv[1])[:5]
-            _blocker_str = ", ".join(
-                f"{k} ({v} cells)" for k, v in _top_blockers
-            ) if _top_blockers else "(no scan data)"
             raise PlacementError(
                 ci.instance_id, ci.catalog_id,
                 f"No valid position found inside the "
                 f"{xmax - xmin:.0f}\u00d7{ymax - ymin:.0f}mm outline.  "
                 f"Body is {body_w:.1f}\u00d7{body_h:.1f}mm with "
                 f"{keepout:.1f}mm keepout.  "
-                f"Top rejection reasons: {_blocker_str}.  "
-                f"If UI-placed components (buttons/LEDs) are listed as blockers, "
-                f"reposition them to leave a contiguous clear zone large enough "
-                f"for this component. "
-                f"If [outline] dominates, the board shape is too small or narrow "
-                f"\u2014 widen the outline or reduce the component count.",
+                f"If UI-placed components (buttons/LEDs) block placement, "
+                f"reposition them to leave a contiguous clear zone. "
+                f"If the board shape is too small or narrow, "
+                f"widen the outline or reduce the component count.",
             )
 
         hw_final, hh_final = footprint_halfdims(cat, best_rot)
         ehw_final, ehh_final = footprint_envelope_halfdims(cat, best_rot)
-        placed.append(Placed(
+        _new = Placed(
             instance_id=ci.instance_id,
             catalog_id=ci.catalog_id,
             x=best_pos[0], y=best_pos[1],
@@ -440,24 +446,87 @@ def place_components(
             hw=hw_final, hh=hh_final,
             keepout=keepout,
             env_hw=ehw_final, env_hh=ehh_final,
-        ))
+        )
+        placed.append(_new)
+        placed_map[ci.instance_id] = _new
+
+        # Update congestion grid: block body & commit coarse routes
+        cg.block_component(ci.instance_id, best_pos[0], best_pos[1],
+                           ehw_final, ehh_final)
+        for edge in net_graph.get(ci.instance_id, []):
+            other_p = placed_map.get(edge.other_iid)
+            if other_p is None:
+                continue
+            my_pins = resolve_pin_positions(edge.my_pins, cat)
+            other_cat_c = catalog_map.get(other_p.catalog_id)
+            if not my_pins or other_cat_c is None:
+                continue
+            other_pins = resolve_pin_positions(edge.other_pins, other_cat_c)
+            if not other_pins:
+                continue
+            # Use centroid of pin positions for coarse route
+            mx = sum(pin_world_xy(p, best_pos[0], best_pos[1], best_rot)[0] for p in my_pins) / len(my_pins)
+            my = sum(pin_world_xy(p, best_pos[0], best_pos[1], best_rot)[1] for p in my_pins) / len(my_pins)
+            ox = sum(pin_world_xy(p, other_p.x, other_p.y, other_p.rotation)[0] for p in other_pins) / len(other_pins)
+            oy = sum(pin_world_xy(p, other_p.x, other_p.y, other_p.rotation)[1] for p in other_pins) / len(other_pins)
+            coarse_path = cg.route_coarse(mx, my, ox, oy)
+            if coarse_path is not None:
+                cg.commit_net(edge.net_id, coarse_path)
+
         log.info(
             "Auto-placed %s at (%.1f, %.1f) rot=%d° score=%.2f",
             ci.instance_id, best_pos[0], best_pos[1], best_rot, best_score,
         )
 
+    # ── 3b. SA refinement ──────────────────────────────────────────
+    # The constructive loop above is greedy and order-dependent.
+    # Simulated annealing globally refines positions to reduce total
+    # wirelength and routing congestion.
+    if len(placed) - len(ui_ids) >= 2:
+        placed = sa_refine(
+            placed,
+            ui_ids,
+            design.nets,
+            catalog_map,
+            outline_poly,
+            cg,
+        )
+        placed_map = {p.instance_id: p for p in placed}
+
     # ── 4. Build output ────────────────────────────────────────────
 
-    result_components = [
-        PlacedComponent(
+    result_components = []
+    for p in placed:
+        cat = catalog_map.get(p.catalog_id)
+        x = round(p.x, 2)
+        y = round(p.y, 2)
+        rot = p.rotation
+        style = effective_style.get(p.instance_id, "top")
+        side_y_offset = (cat.body.height_mm / 2
+                         if style == "side" and cat.mounting.style != "side"
+                         else 0)
+
+        pin_positions: dict[str, tuple[float, float]] = {}
+        if cat is not None:
+            rad = math.radians(rot)
+            cos_r = math.cos(rad)
+            sin_r = math.sin(rad)
+            for pin in cat.pins:
+                px, py = pin.position_mm[0], pin.position_mm[1] + side_y_offset
+                pin_positions[pin.id] = (
+                    round(x + px * cos_r - py * sin_r, 4),
+                    round(y + px * sin_r + py * cos_r, 4),
+                )
+
+        result_components.append(PlacedComponent(
             instance_id=p.instance_id,
             catalog_id=p.catalog_id,
-            x_mm=round(p.x, 2),
-            y_mm=round(p.y, 2),
-            rotation_deg=p.rotation,
-        )
-        for p in placed
-    ]
+            x_mm=x,
+            y_mm=y,
+            rotation_deg=rot,
+            pin_positions=pin_positions,
+            mounting_style=style,
+        ))
 
     return FullPlacement(
         components=result_components,

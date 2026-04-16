@@ -1,11 +1,13 @@
-"""GCode pipeline — slice STL, inject pauses, post-process.
+"""Custom G-code pipeline for multi-stage 3D printing.
 
-Public entry point
-------------------
-    from src.pipeline.gcode import run_gcode_pipeline
-    result = run_gcode_pipeline(session)
+Slices STL via PrusaSlicer CLI, then post-processes the G-code to insert
+pause points, ironing passes, and conductive-ink toolpaths so that
+electronic components can be placed mid-print.
 """
 
-from .pipeline import run_gcode_pipeline  # noqa: F401
+from .pipeline import run_gcode_pipeline, GcodePipelineResult
 
-__all__ = ["run_gcode_pipeline"]
+__all__ = [
+    "run_gcode_pipeline",
+    "GcodePipelineResult",
+]

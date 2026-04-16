@@ -73,8 +73,6 @@ function buildPreview(design) {
     wrap.className = 'vp-design';
 
     wrap.appendChild(buildOutlineSVG(design));
-    wrap.appendChild(buildComponentList(design.components));
-    wrap.appendChild(buildNetList(design.nets));
 
     return wrap;
 }
@@ -155,13 +153,13 @@ function buildOutlineSVG(design) {
     ];
 
     ui_placements.forEach((up, idx) => {
-        const comp = compMap[up.instance_id];
+        const comp = compMap[up.instance_id] || up;  // fall back to enriched ui_placement
         const color = UI_COLORS[idx % UI_COLORS.length];
 
         if (up.edge_index != null) {
             // Side-mount — snap to wall, then draw component icon
             const snapInfo = snapToEdge(up, verts, normaliseOutline(design.outline).zTops, (design.enclosure?.height_mm ?? 25));
-            if (comp && comp.body) {
+            if (comp.body) {
                 const fakeComp = {
                     ...comp,
                     x_mm: snapInfo.x, y_mm: snapInfo.y,
@@ -175,7 +173,7 @@ function buildOutlineSVG(design) {
             }
         } else {
             // Interior UI component
-            if (comp && comp.body) {
+            if (comp.body) {
                 const fakeComp = {
                     ...comp,
                     x_mm: up.x_mm, y_mm: up.y_mm,

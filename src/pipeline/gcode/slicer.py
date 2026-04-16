@@ -1,9 +1,9 @@
-"""PrusaSlicer CLI wrapper — slices STL to G-code.
+"""
+PrusaSlicer CLI bridge — slices STL models into G-code.
 
-Uses the same subprocess pattern as scad/compiler.py:
-  - Popen with pipe capture
-  - Cancellation via threading.Event
-  - Full output logging
+Finds the ``prusa-slicer-console`` executable automatically and invokes
+it with a printer profile.  Supports multiple printers (MK3S, MK3S+, CORE One).
+Profile ``.ini`` files live in the ``profiles/`` directory next to this module.
 """
 
 from __future__ import annotations
@@ -11,214 +11,199 @@ from __future__ import annotations
 import logging
 import shutil
 import subprocess
-import sys
-import threading
-import time
 from pathlib import Path
 
-from .profiles import PrinterDef, FilamentDef
+from src.pipeline import safe_path as _safe_path
+from src.pipeline.config import get_printer
 
 log = logging.getLogger(__name__)
 
-# ── Profile directory (shipped alongside code) ────────────────────
+# ── Locate PrusaSlicer ─────────────────────────────────────────────
 
-PROFILE_DIR = Path(__file__).resolve().parent / "profiles_ini"
+_CANDIDATES = [
+    r"C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer-console.exe",
+    r"C:\Program Files (x86)\Prusa3D\PrusaSlicer\prusa-slicer-console.exe",
+]
 
 
-def _find_prusa_slicer() -> str | None:
-    """Locate the PrusaSlicer console binary."""
-    # Check PATH
-    for name in ("prusa-slicer-console", "prusa-slicer"):
-        path = shutil.which(name)
-        if path:
-            return path
-    # Windows hard-coded locations
-    if sys.platform == "win32":
-        for candidate in [
-            r"C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer-console.exe",
-            r"C:\Program Files (x86)\Prusa3D\PrusaSlicer\prusa-slicer-console.exe",
-        ]:
-            if Path(candidate).exists():
-                return candidate
+def find_prusaslicer() -> str | None:
+    """Return the path to ``prusa-slicer-console``, or *None*."""
+    path = shutil.which("prusa-slicer-console")
+    if path:
+        return path
+    for c in _CANDIDATES:
+        if Path(c).exists():
+            return c
     return None
 
 
-def _write_filament_ini(filament: FilamentDef, out_dir: Path) -> Path:
-    """Write a temporary .ini file with filament overrides."""
-    ini_path = out_dir / f"filament_{filament.id}.ini"
-    lines = [f"# Auto-generated filament override: {filament.label}"]
-    for key, val in filament.overrides.items():
-        lines.append(f"{key} = {val}")
-    ini_path.write_text("\n".join(lines), encoding="utf-8")
-    return ini_path
+_GUI_CANDIDATES = [
+    r"C:\Program Files\Prusa3D\PrusaSlicer\prusa-slicer.exe",
+    r"C:\Program Files (x86)\Prusa3D\PrusaSlicer\prusa-slicer.exe",
+]
 
 
-def _parse_profile_directives(ini_path: Path) -> dict[str, str]:
-    """Extract ``# @key: value`` directives from a profile .ini file.
+def find_prusaslicer_gui() -> str | None:
+    """Return the path to the *GUI* ``prusa-slicer`` executable.
 
-    These custom markers control which PrusaSlicer CLI flags are used:
-      # @printer-profile: Prusa i3 MK3S+
-      # @print-profile: 0.20mm BALANCED
-      # @material-profile: Prusament PLA
-      # @thumbnails: 16x16/PNG,220x124/PNG
+    The ``--gcodeviewer`` flag requires the GUI binary, not the
+    headless ``prusa-slicer-console``.
     """
-    directives: dict[str, str] = {}
-    if not ini_path.exists():
-        return directives
-    for line in ini_path.read_text(encoding="utf-8").splitlines():
+    path = shutil.which("prusa-slicer")
+    if path:
+        return path
+    for c in _GUI_CANDIDATES:
+        if Path(c).exists():
+            return c
+    return None
+
+
+# ── Profile resolution ─────────────────────────────────────────────
+
+_PROFILES_DIR = Path(__file__).resolve().parent / "profiles"
+
+# Recognised directives in profile .ini files (# @key: value).
+# Maps directive name → PrusaSlicer CLI flag.
+_DIRECTIVE_FLAGS: dict[str, str] = {
+    "printer-profile":  "--printer-profile",
+    "print-profile":    "--print-profile",
+    "material-profile": "--material-profile",
+    "thumbnails":       "--thumbnails",
+}
+
+
+def _parse_profile(profile_path: Path) -> tuple[Path, list[str]]:
+    """Read a profile ``.ini`` and extract ``# @directive`` CLI flags.
+
+    Returns ``(profile_path, extra_cli_args)`` where *extra_cli_args*
+    are the CLI flags derived from directives found in the file.
+    """
+    if not profile_path.exists():
+        raise FileNotFoundError(
+            f"Slicer profile not found: {profile_path}\n"
+            f"Expected profiles live in {_PROFILES_DIR}"
+        )
+    extra: list[str] = []
+    for line in profile_path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
-        if line.startswith("# @") and ":" in line:
-            key, _, val = line[3:].partition(":")
-            directives[key.strip()] = val.strip()
-    return directives
+        if not line.startswith("# @"):
+            continue
+        # Format: # @key: value
+        rest = line[3:]  # strip "# @"
+        if ":" not in rest:
+            continue
+        key, _, value = rest.partition(":")
+        key = key.strip().lower()
+        value = value.strip()
+        if key in _DIRECTIVE_FLAGS and value:
+            extra += [_DIRECTIVE_FLAGS[key], value]
+    return profile_path, extra
 
 
-def _kill_proc(pid: int) -> None:
-    """Kill a process tree (Windows-safe)."""
-    if sys.platform == "win32":
-        try:
-            subprocess.run(
-                ["taskkill", "/T", "/F", "/PID", str(pid)],
-                capture_output=True, timeout=10,
-            )
-        except Exception:
-            pass
-    else:
-        import os
-        import signal
-        try:
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
-        except Exception:
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except Exception:
-                pass
-
+# ── Slice ──────────────────────────────────────────────────────────
 
 def slice_stl(
     stl_path: Path,
-    gcode_path: Path,
-    printer: PrinterDef,
-    filament: FilamentDef,
-    center_x: float,
-    center_y: float,
-    cancel: threading.Event | None = None,
-    timeout: float = 300,
-) -> tuple[bool, str]:
-    """Slice an STL file to G-code via PrusaSlicer CLI.
+    output_gcode: Path | None = None,
+    profile_path: Path | None = None,
+    *,
+    printer: str | None = None,
+    filament: str | None = None,
+    filament_override_path: Path | None = None,
+    center: tuple[float, float] | None = None,
+    extra_overrides: list[Path] | None = None,
+    timeout_s: int = 300,
+) -> tuple[bool, str, Path | None]:
+    """Slice *stl_path* and write G-code.
 
     Parameters
     ----------
-    stl_path   : Path to the input STL.
-    gcode_path : Path for the output G-code.
-    printer    : PrinterDef with profile_filename.
-    filament   : FilamentDef with overrides.
-    center_x, center_y : Bed coordinates to center the model on.
-    cancel     : Optional threading.Event  to abort.
-    timeout    : Max seconds to wait.
+    stl_path : Path
+        Input STL file.
+    output_gcode : Path, optional
+        Where to write the ``.gcode`` file.  Defaults to
+        ``stl_path.with_suffix('.gcode')``.
+    profile_path : Path, optional
+        ``--load`` ini file.  When *None* the printer-specific
+        profile from ``profiles/`` is used.
+    printer : str, optional
+        Printer id (``"mk3s"``, ``"mk3s_plus"``, or ``"coreone"``).
+        Determines which default profile to use when *profile_path* is None.
+    filament : str, optional
+        Filament id (e.g. ``"prusament_pla"``, ``"overture_rockpla"``).
+        Used only if *filament_override_path* is not provided.
+    filament_override_path : Path, optional
+        Pre-written filament override ``.ini``.
+    center : tuple[float, float], optional
+        ``(X, Y)`` bed coordinate for the model centre.  Passed to
+        PrusaSlicer as ``--center X,Y``.  When *None*, PrusaSlicer
+        auto-centres on the build plate.
+    extra_overrides : list[Path], optional
+        Additional ``--load`` ini files applied after the main profile
+        and filament overrides.
+    timeout_s : int
+        CLI timeout in seconds.
 
-    Returns (ok, message).
+    Returns
+    -------
+    (ok, message, gcode_path_or_none)
     """
-    exe = _find_prusa_slicer()
+    exe = find_prusaslicer()
     if not exe:
-        return False, "PrusaSlicer not found. Install it or add to PATH."
+        return False, "PrusaSlicer not found on this system.", None
 
-    gcode_path.parent.mkdir(parents=True, exist_ok=True)
+    pdef = get_printer(printer)
 
-    # Write filament overrides to temp .ini
-    filament_ini = _write_filament_ini(filament, gcode_path.parent)
+    if profile_path is None:
+        profile_path = _PROFILES_DIR / pdef.profile_filename
 
-    # Build command
-    cmd = [
-        exe,
-        "--export-gcode",
-        f"--center", f"{center_x:.1f},{center_y:.1f}",
-    ]
+    profile_path, profile_cli_args = _parse_profile(profile_path)
 
-    # Load printer profile if it exists
-    profile_ini = PROFILE_DIR / printer.profile_filename
-    directives: dict[str, str] = {}
-    if profile_ini.exists():
-        directives = _parse_profile_directives(profile_ini)
-        cmd.extend(["--load", str(profile_ini)])
+    if output_gcode is None:
+        output_gcode = stl_path.with_suffix(".gcode")
 
-    # Apply directives as CLI flags
-    for key in ("printer-profile", "print-profile", "material-profile", "thumbnails"):
-        if key in directives:
-            cmd.extend([f"--{key}", directives[key]])
+    cmd = [exe, "--export-gcode"]
 
-    # Load filament overrides
-    cmd.extend(["--load", str(filament_ini)])
+    if center is not None:
+        cmd += ["--center", f"{center[0]:.3f},{center[1]:.3f}"]
 
-    cmd.extend(["--output", str(gcode_path), str(stl_path)])
+    # Directives from the profile (e.g. --printer-profile, --thumbnails)
+    # are applied first so the profile's --load overrides sit on top.
+    cmd += profile_cli_args
+    cmd += ["--load", _safe_path(profile_path)]
 
-    log.info("PrusaSlicer: %s", " ".join(cmd))
+    # Filament overrides (temperature, bed, cooling) are loaded *after*
+    # the printer profile so they take final precedence.
+    if filament_override_path is None and filament:
+        from src.pipeline.gcode.filaments import write_filament_overrides
+        filament_override_path = write_filament_overrides(
+            filament, stl_path.parent,
+        )
+    if filament_override_path and filament_override_path.exists():
+        cmd += ["--load", _safe_path(filament_override_path)]
+        log.info("Filament overrides loaded: %s", filament_override_path)
 
-    # ── Run subprocess ─────────────────────────────────────────
-    log_path = gcode_path.with_suffix(".slicer.log")
+    for p in (extra_overrides or []):
+        if p.exists():
+            cmd += ["--load", _safe_path(p)]
+
+    cmd += ["--output", _safe_path(output_gcode), _safe_path(stl_path)]
+
+    log.info("Slicing: %s", " ".join(cmd))
+
     try:
-        proc = subprocess.Popen(
+        result = subprocess.run(
             cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
         )
+        stderr = result.stderr.strip()
+        if result.returncode == 0 and output_gcode.exists():
+            log.info("Slicing succeeded: %s", output_gcode)
+            return True, stderr or "OK", output_gcode
+        return False, stderr or f"PrusaSlicer exited with code {result.returncode}", None
+    except subprocess.TimeoutExpired:
+        return False, f"PrusaSlicer timed out ({timeout_s}s).", None
     except Exception as e:
-        return False, f"Failed to start PrusaSlicer: {e}"
-
-    stdout_chunks: list[bytes] = []
-    stderr_chunks: list[bytes] = []
-
-    def _drain(pipe, chunks):
-        try:
-            while True:
-                chunk = pipe.read(4096)
-                if not chunk:
-                    break
-                chunks.append(chunk)
-        except Exception:
-            pass
-
-    t_out = threading.Thread(target=_drain, args=(proc.stdout, stdout_chunks), daemon=True)
-    t_err = threading.Thread(target=_drain, args=(proc.stderr, stderr_chunks), daemon=True)
-    t_out.start()
-    t_err.start()
-
-    deadline = time.monotonic() + timeout
-    try:
-        while proc.poll() is None:
-            if cancel and cancel.is_set():
-                _kill_proc(proc.pid)
-                proc.wait(timeout=5)
-                return False, "Slicing cancelled."
-            if time.monotonic() > deadline:
-                _kill_proc(proc.pid)
-                proc.wait(timeout=5)
-                return False, f"PrusaSlicer timed out ({timeout:.0f}s)."
-            time.sleep(0.25)
-    except Exception as e:
-        _kill_proc(proc.pid)
-        return False, str(e)
-
-    t_out.join(timeout=5)
-    t_err.join(timeout=5)
-
-    stdout = b"".join(stdout_chunks).decode("utf-8", errors="replace").strip()
-    stderr = b"".join(stderr_chunks).decode("utf-8", errors="replace").strip()
-    combined = "\n".join(filter(None, [stderr, stdout]))
-
-    # Write log
-    try:
-        log_path.write_text(
-            f"Command: {' '.join(cmd)}\nExit code: {proc.returncode}\n\n"
-            f"--- stderr ---\n{stderr}\n\n--- stdout ---\n{stdout}\n",
-            encoding="utf-8",
-        )
-    except Exception:
-        pass
-
-    if proc.returncode == 0 and gcode_path.exists():
-        log.info("Sliced OK → %s (%.1f kB)", gcode_path.name,
-                 gcode_path.stat().st_size / 1024)
-        return True, combined or "OK"
-
-    return False, combined or f"PrusaSlicer exited with code {proc.returncode}"
+        return False, str(e), None

@@ -9,12 +9,13 @@ import { sendCircuitPrompt, loadCircuitConversation, enableCircuitTab } from './
 import { runPlacement, loadPlacementResult, enablePlacementTab } from './placement.js';
 import { runRouting, loadRoutingResult, enableRoutingTab } from './routing.js';
 import { runScad, loadScadResult, enableScadTab } from './scad.js';
-import { runManufacturing, loadManufacturingResult, enableManufacturingTab } from './manufacturing.js';
+import { runManufacturing, loadManufacturingResult, enableManufacturingTab, initManufacturingConfig, syncManufacturingConfig } from './manufacturing.js';
 import { initFirmwarePanel, loadFirmwareResult, showFirmwareSection } from './firmware.js';
 import { initGuide, openGuide, enableGuideBtn } from './guide.js';
 import { initThemeSwitcher } from './theme.js';
 import { setStep } from './viewport.js';
 import './viewportDesign.js';   // registers the design viewport handler
+import './viewportCircuit.js';   // registers the circuit viewport handler
 import './viewportPlacement.js'; // registers the placement viewport handler
 import './viewportRouting.js';   // registers the routing viewport handler
 import './viewportScad.js';      // registers the SCAD / STL viewport handler
@@ -44,6 +45,8 @@ document.addEventListener('DOMContentLoaded', () => {
             })
             .then(data => {
                 if (data?.name) setSessionLabel(state.session, data.name);
+                // Sync printer/filament dropdowns from session
+                syncManufacturingConfig(data);
                 // Enable circuit nav if design is complete
                 if (data?.artifacts?.design) {
                     enableCircuitTab(!data?.artifacts?.circuit_conversation);
@@ -95,6 +98,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize firmware panel
     initFirmwarePanel();
+
+    // Initialize manufacturing config (printer/filament selects)
+    initManufacturingConfig();
 
     // Header buttons
     document.getElementById('btn-new-session').addEventListener('click', startNewSession);
@@ -178,7 +184,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
-function switchStep(step) {
+export function switchStep(step) {
     state.activeStep = step;
     document.querySelectorAll('#pipeline-nav .step[data-step]').forEach(btn => {
         btn.classList.toggle('active', btn.dataset.step === step);

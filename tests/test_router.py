@@ -62,20 +62,13 @@ class TestRoutingGrid(unittest.TestCase):
         self.assertTrue(self.grid.is_blocked(gx, gy))
 
     def test_block_and_free_cell(self):
-        """Temporary blocking can be reversed."""
+        """Blocking and freeing cells works."""
         gx, gy = self.grid.world_to_grid(10.0, 10.0)
         self.assertTrue(self.grid.is_free(gx, gy))
         self.grid.block_cell(gx, gy)
         self.assertTrue(self.grid.is_blocked(gx, gy))
         self.grid.free_cell(gx, gy)
         self.assertTrue(self.grid.is_free(gx, gy))
-
-    def test_permanent_block_not_freeable(self):
-        """Permanently blocked cells cannot be freed."""
-        gx, gy = self.grid.world_to_grid(10.0, 10.0)
-        self.grid.permanently_block_cell(gx, gy)
-        self.grid.free_cell(gx, gy)
-        self.assertTrue(self.grid.is_blocked(gx, gy))
 
     def test_coordinate_round_trip(self):
         """World -> grid -> world round-trips approximately."""
@@ -84,15 +77,6 @@ class TestRoutingGrid(unittest.TestCase):
         wx2, wy2 = self.grid.grid_to_world(gx, gy)
         self.assertAlmostEqual(wx, wx2, delta=1.0)
         self.assertAlmostEqual(wy, wy2, delta=1.0)
-
-    def test_snapshot_restore(self):
-        """Snapshot and restore preserve cell state."""
-        gx, gy = self.grid.world_to_grid(10.0, 10.0)
-        snap = self.grid.snapshot()
-        self.grid.block_cell(gx, gy)
-        self.assertTrue(self.grid.is_blocked(gx, gy))
-        self.grid.restore(snap)
-        self.assertTrue(self.grid.is_free(gx, gy))
 
 
 class TestPathfinder(unittest.TestCase):
@@ -115,16 +99,17 @@ class TestPathfinder(unittest.TestCase):
         self.assertEqual(len(ys), 1)
 
     def test_l_shaped_path(self):
-        """Path between offset points uses Manhattan routing."""
+        """Path between offset points uses valid 8-directional routing."""
         src = self.grid.world_to_grid(5.0, 5.0)
         snk = self.grid.world_to_grid(25.0, 25.0)
         path = find_path(self.grid, src, snk)
         self.assertIsNotNone(path)
-        # Verify Manhattan: each step is exactly 1 cell in one axis
         for i in range(1, len(path)):
             dx = abs(path[i][0] - path[i - 1][0])
             dy = abs(path[i][1] - path[i - 1][1])
-            self.assertEqual(dx + dy, 1, f"Non-Manhattan step at {i}")
+            self.assertLessEqual(dx, 1, f"Jump >1 in x at step {i}")
+            self.assertLessEqual(dy, 1, f"Jump >1 in y at step {i}")
+            self.assertGreater(dx + dy, 0, f"Zero-length step at {i}")
 
     def test_path_around_obstacle(self):
         """Path routes around a blocked rectangle."""
@@ -145,7 +130,7 @@ class TestPathfinder(unittest.TestCase):
         # Block a complete wall
         for y in range(self.grid.height):
             gx = self.grid.width // 2
-            self.grid.permanently_block_cell(gx, y)
+            self.grid.block_cell(gx, y)
         src = self.grid.world_to_grid(5.0, 15.0)
         snk = self.grid.world_to_grid(25.0, 15.0)
         path = find_path(self.grid, src, snk)
@@ -189,16 +174,19 @@ class TestFlashlightRouting(unittest.TestCase):
         self.assertEqual(routed_nets, expected)
 
     def test_traces_are_manhattan(self):
-        """All trace segments should be horizontal or vertical."""
+        """All trace segments should be horizontal, vertical, or 45-degree diagonal."""
         for trace in self.result.traces:
             for i in range(1, len(trace.path)):
                 x1, y1 = trace.path[i - 1]
                 x2, y2 = trace.path[i]
-                is_horizontal = abs(y1 - y2) < 0.01
-                is_vertical = abs(x1 - x2) < 0.01
+                dx = abs(x2 - x1)
+                dy = abs(y2 - y1)
+                is_horizontal = dy < 0.01
+                is_vertical = dx < 0.01
+                is_diagonal = abs(dx - dy) < 0.01
                 self.assertTrue(
-                    is_horizontal or is_vertical,
-                    f"Non-Manhattan segment in {trace.net_id}: "
+                    is_horizontal or is_vertical or is_diagonal,
+                    f"Invalid segment in {trace.net_id}: "
                     f"({x1:.1f},{y1:.1f}) -> ({x2:.1f},{y2:.1f})",
                 )
 
@@ -284,6 +272,67 @@ class TestFlashlightRouting(unittest.TestCase):
                         y += step
 
         self.assertEqual(crossings, [], f"Found {len(crossings)} crossings: {crossings[:5]}")
+
+    def test_trace_channel_walls(self):
+        """Between any two traces of different nets there must be a wall of
+        empty cells at least as wide as the trace clearance, forming a
+        physical channel between them."""
+        from src.pipeline.router.models import RouterConfig
+        cfg = RouterConfig()
+        res = cfg.grid_resolution_mm
+        min_dist_mm = cfg.trace_width_mm / 2 + cfg.trace_clearance_mm
+
+        outline_poly = Polygon(self.placement.outline.vertices)
+        xmin, ymin, _, _ = outline_poly.bounds
+
+        def w2g(wx: float, wy: float) -> tuple[int, int]:
+            gx = int(round((wx - xmin) / res - 0.5))
+            gy = int(round((wy - ymin) / res - 0.5))
+            return (gx, gy)
+
+        cell_owner: dict[tuple[int, int], str] = {}
+        for trace in self.result.traces:
+            net = trace.net_id
+            for i in range(len(trace.path) - 1):
+                x1, y1 = trace.path[i]
+                x2, y2 = trace.path[i + 1]
+                if abs(x2 - x1) > 0.001:
+                    step = res if x2 > x1 else -res
+                    x = x1
+                    while (step > 0 and x <= x2 + 0.001) or (step < 0 and x >= x2 - 0.001):
+                        cell_owner[w2g(x, y1)] = net
+                        x += step
+                else:
+                    step = res if y2 > y1 else -res
+                    y = y1
+                    while (step > 0 and y <= y2 + 0.001) or (step < 0 and y >= y2 - 0.001):
+                        cell_owner[w2g(x1, y)] = net
+                        y += step
+
+        search_cells = int(math.ceil(min_dist_mm / res))
+
+        violations: list[str] = []
+        for (gx, gy), net in cell_owner.items():
+            for dy in range(-search_cells, search_cells + 1):
+                for dx in range(-search_cells, search_cells + 1):
+                    if dx == 0 and dy == 0:
+                        continue
+                    dist_mm = math.hypot(dx * res, dy * res)
+                    if dist_mm > min_dist_mm:
+                        continue
+                    neighbour = (gx + dx, gy + dy)
+                    other = cell_owner.get(neighbour)
+                    if other is not None and other != net:
+                        violations.append(
+                            f"{net} at {(gx, gy)} too close to {other} "
+                            f"at {neighbour} ({dist_mm:.2f}mm < {min_dist_mm:.2f}mm)"
+                        )
+
+        self.assertEqual(
+            violations, [],
+            f"Found {len(violations)} channel wall violations: "
+            f"{violations[:5]}",
+        )
 
 
 class TestRoutingSerialization(unittest.TestCase):

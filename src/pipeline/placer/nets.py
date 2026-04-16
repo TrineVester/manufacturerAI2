@@ -66,20 +66,25 @@ def net_fanout_map(nets: list[Net]) -> dict[str, int]:
     return result
 
 
+_shared_nets_cache: dict[tuple[str, str], int] = {}
+
+
 def count_shared_nets(
     iid_a: str, iid_b: str,
     net_graph: dict[str, list[NetEdge]],
 ) -> int:
-    """Count distinct nets connecting two component instances.
-
-    This tells the placer how many trace channels must fit in the
-    gap between two components.
-    """
+    """Count distinct nets connecting two component instances."""
+    key = (iid_a, iid_b)
+    cached = _shared_nets_cache.get(key)
+    if cached is not None:
+        return cached
     nets: set[str] = set()
     for edge in net_graph.get(iid_a, []):
         if edge.other_iid == iid_b:
             nets.add(edge.net_id)
-    return len(nets)
+    result = len(nets)
+    _shared_nets_cache[key] = result
+    return result
 
 
 def component_degree(
@@ -203,6 +208,9 @@ def build_placement_groups(
     return ordered_groups
 
 
+_resolve_cache: dict[int, dict[str, tuple[float, float]]] = {}
+
+
 def resolve_pin_positions(
     pin_ids: list[str],
     cat: Component,
@@ -212,21 +220,18 @@ def resolve_pin_positions(
     For group IDs (MCU gpio, etc.) returns the centroid of all pins
     in that group.  The router will later resolve the exact pin.
     """
-    pin_map = {p.id: p.position_mm for p in cat.pins}
-    group_map: dict[str, tuple[float, float]] = {}
-    if cat.pin_groups:
-        for g in cat.pin_groups:
-            g_pins = [pin_map[p] for p in g.pin_ids if p in pin_map]
-            if g_pins:
-                group_map[g.id] = (
-                    sum(p[0] for p in g_pins) / len(g_pins),
-                    sum(p[1] for p in g_pins) / len(g_pins),
-                )
+    cat_id = id(cat)
+    lookup = _resolve_cache.get(cat_id)
+    if lookup is None:
+        lookup = {p.id: p.position_mm for p in cat.pins}
+        if cat.pin_groups:
+            for g in cat.pin_groups:
+                g_pins = [lookup[p] for p in g.pin_ids if p in lookup]
+                if g_pins:
+                    lookup[g.id] = (
+                        sum(p[0] for p in g_pins) / len(g_pins),
+                        sum(p[1] for p in g_pins) / len(g_pins),
+                    )
+        _resolve_cache[cat_id] = lookup
 
-    positions: list[tuple[float, float]] = []
-    for pid in pin_ids:
-        if pid in pin_map:
-            positions.append(pin_map[pid])
-        elif pid in group_map:
-            positions.append(group_map[pid])
-    return positions
+    return [lookup[pid] for pid in pin_ids if pid in lookup]

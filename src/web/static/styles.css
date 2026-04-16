@@ -1096,6 +1096,9 @@ main {
 .vp-3d-toggle-btn:hover {
     opacity: 0.82;
 }
+.vp-bitmap-toggle-btn {
+    margin-left: 6px;
+}
 
 .vp-3d-loading {
     position: absolute;

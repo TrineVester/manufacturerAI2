@@ -1,29 +1,100 @@
 """A* pathfinder for Manhattan routing on the routing grid.
 
 Supports:
-  - Point-to-point routing (findPath)
-  - Point-to-tree routing for multi-pin nets (findPathToTree)
+  - Point-to-point routing (find_path)
+  - Point-to-tree routing for multi-pin nets (find_path_to_tree)
   - Turn penalty to prefer straight runs
-  - Optional cell cost function for edge-hugging power traces
-  - Crossing-aware mode for rip-up (heavy penalty for blocked cells)
 """
 
 from __future__ import annotations
 
-import heapq
+import array as _array_mod
+from functools import lru_cache
+from heapq import heappush as _heappush, heappop as _heappop
 
-from .grid import RoutingGrid, FREE, TRACE_PATH, PERMANENTLY_BLOCKED
-from .models import TURN_PENALTY, CROSSING_PENALTY
+import numpy as np
+from scipy.ndimage import distance_transform_cdt
 
-# Per-cell extra cost treated as "strong avoidance" for component bodies.
-# A detour of N cells beats going through N/12 body cells — enough to
-# redirect short-to-medium routes around components without causing
-# failures when no external path exists (e.g. resistor far from its pin).
-BODY_EXTRA = 12
+from .grid import RoutingGrid, FREE, BLOCKED, TRACE_PATH, PERMANENTLY_BLOCKED
+from .models import TURN_PENALTY
 
 
-# Manhattan directions: (dx, dy)
-DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1))
+# Manhattan and diagonal directions: (dx, dy)
+DIRS = ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1))
+
+_SQRT2 = 1.4142135623730951
+_SQRT2_M1 = _SQRT2 - 1.0  # ≈ 0.4142
+
+# Horizontal corner offset for each direction (0 for orthogonal dirs)
+_DIAG_CORNER_H = (0, 0, 0, 0, 1, 1, -1, -1)
+# Vertical corner offset multiplier for each direction (multiply by W)
+_DIAG_CORNER_V = (0, 0, 0, 0, 1, -1, 1, -1)
+
+
+def _build_angle_table():
+    n = len(DIRS)
+    tbl = [0] * (n * n)
+    for i, (dx1, dy1) in enumerate(DIRS):
+        for j, (dx2, dy2) in enumerate(DIRS):
+            if i == j:
+                continue
+            dot = dx1 * dx2 + dy1 * dy2
+            msq = (dx1 * dx1 + dy1 * dy1) * (dx2 * dx2 + dy2 * dy2)
+            if msq == 1:
+                tbl[i * n + j] = 2 if dot == 0 else (4 if dot < 0 else 0)
+            elif msq == 4:
+                tbl[i * n + j] = 2 if dot == 0 else (4 if dot < 0 else 0)
+            else:
+                tbl[i * n + j] = 1 if dot > 0 else 3
+    return tuple(tbl)
+
+
+_ANGLE_TABLE = _build_angle_table()
+_TURN_FRAC = (0.0, 0.25, 1.0, 2.0, 3.0)
+
+
+def _turn_cost(direction: int, d: int, turn_penalty: float) -> float:
+    if direction == -1 or direction == d:
+        return 0.0
+    return turn_penalty * _TURN_FRAC[_ANGLE_TABLE[direction * 8 + d]]
+
+
+def _octile_h(dx: int, dy: int) -> float:
+    adx = abs(dx)
+    ady = abs(dy)
+    return max(adx, ady) + _SQRT2_M1 * min(adx, ady)
+
+
+def _build_cost_table(turn_penalty: float) -> tuple:
+    """Precompute move_cost + turn_cost for all (prev_direction, d) pairs.
+
+    Index: (direction + 1) * 8 + d
+    direction -1 (no previous) maps to row 0; directions 0-7 map to rows 1-8.
+    """
+    tbl = [0.0] * (9 * 8)
+    for direction in range(-1, 8):
+        row = (direction + 1) * 8
+        for d in range(8):
+            move = 1.0 if d < 4 else _SQRT2
+            tc = _turn_cost(direction, d, turn_penalty)
+            tbl[row + d] = move + tc
+    return tuple(tbl)
+
+
+@lru_cache(maxsize=4)
+def _build_neighbors(W: int, H: int) -> tuple:
+    """Precompute valid (neighbor_key, direction) pairs for each cell."""
+    N = W * H
+    neighbors = [None] * N
+    for y in range(H):
+        for x in range(W):
+            nbs = []
+            for d, (dx, dy) in enumerate(DIRS):
+                nx, ny = x + dx, y + dy
+                if 0 <= nx < W and 0 <= ny < H:
+                    nbs.append((ny * W + nx, d))
+            neighbors[y * W + x] = tuple(nbs)
+    return tuple(neighbors)
 
 
 def find_path(
@@ -32,62 +103,63 @@ def find_path(
     sink: tuple[int, int],
     *,
     turn_penalty: int = TURN_PENALTY,
+    crossing_cost: int = 0,
+    cost_map: dict[int, float] | None = None,
 ) -> list[tuple[int, int]] | None:
     """A* point-to-point Manhattan routing.
 
     Returns a list of (gx, gy) grid cells from source to sink,
     or None if no path exists.
+
+    When crossing_cost > 0 the pathfinder is allowed to walk through
+    TRACE_PATH and BLOCKED cells at the given extra cost per cell.
     """
     sx, sy = source
     tx, ty = sink
 
-    # Cache grid internals as locals — avoids repeated attribute
-    # lookups and method-call overhead in the inner loop.
     W = grid.width
     H = grid.height
     cells = grid._cells
 
     if not (0 <= sx < W and 0 <= sy < H and 0 <= tx < W and 0 <= ty < H):
         return None
-    # Reject if source or sink is occupied by another net's trace
-    if cells[sy * W + sx] == TRACE_PATH:
+    protected = grid._protected
+    if cells[sy * W + sx] == TRACE_PATH and (sx, sy) not in protected:
         return None
-    if cells[ty * W + tx] == TRACE_PATH:
+    if cells[ty * W + tx] == TRACE_PATH and (tx, ty) not in protected:
         return None
     if source == sink:
         return [source]
 
-    # Try L-shaped routes first (fast path)
-    l_path = _try_l_route(grid, source, sink)
-    if l_path is not None:
-        return l_path
-
-    # Full A*
+    N = W * H
+    INF = float('inf')
     start_key = sy * W + sx
     sink_key = ty * W + tx
-    h0 = abs(sx - tx) + abs(sy - ty)
+
+    neighbors = _build_neighbors(W, H)
+    cost_tbl = _build_cost_table(turn_penalty)
+    dcv = (0, 0, 0, 0, W, -W, W, -W)
+
+    g = [INF] * N
+    g[start_key] = 0
+    parent = [-1] * N
+    closed = bytearray(N)
+
     counter = 0
-    heap: list[tuple[int, int, int, int, int, int]] = [(h0, counter, sx, sy, -1, -1)]
-    g_scores: dict[int, int] = {start_key: 0}
-    parents: dict[int, tuple[int, int]] = {}  # key -> (parent_key, direction)
-    closed: set[int] = set()
+    heap: list[tuple[float, int, int, int]] = [(_octile_h(sx - tx, sy - ty), counter, start_key, -1)]
 
     while heap:
-        f, _cnt, cx, cy, direction, parent_key = heapq.heappop(heap)
-        key = cy * W + cx
+        f, _cnt, key, direction = _heappop(heap)
 
-        if key in closed:
+        if closed[key]:
             continue
-        closed.add(key)
-        if key != start_key:
-            parents[key] = (parent_key, direction)
+        closed[key] = 1
 
         if key == sink_key:
-            # Reconstruct path
-            path = [(cx, cy)]
+            path = [(key % W, key // W)]
             k = key
-            while k in parents:
-                pk, _ = parents[k]
+            while True:
+                pk = parent[k]
                 if pk < 0:
                     break
                 path.append((pk % W, pk // W))
@@ -95,33 +167,44 @@ def find_path(
             path.reverse()
             return path
 
-        cur_g = g_scores[key]
+        cur_g = g[key]
+        dir_row = (direction + 1) * 8
 
-        for d, (dx, dy) in enumerate(DIRS):
-            nx, ny = cx + dx, cy + dy
-            if not (0 <= nx < W and 0 <= ny < H):
+        for nkey, d in neighbors[key]:
+            if closed[nkey]:
                 continue
-            nkey = ny * W + nx
-            if nkey in closed:
-                continue
-            # Allow stepping onto the source or sink even if blocked,
-            # but NEVER if occupied by another net's trace (TRACE_PATH).
+
+            if d >= 4:
+                c1 = key + _DIAG_CORNER_H[d]
+                c2 = key + dcv[d]
+                if cells[c1] == TRACE_PATH and cells[c2] == TRACE_PATH:
+                    continue
+
             nval = cells[nkey]
+            cross_extra = 0
             if nval != FREE:
-                if nval == TRACE_PATH:
+                if nval == PERMANENTLY_BLOCKED:
                     continue
-                if (nx, ny) != sink and (nx, ny) != source:
-                    continue
+                if crossing_cost > 0 and (nval == TRACE_PATH or nval == BLOCKED):
+                    cross_extra = crossing_cost
+                else:
+                    if nval == TRACE_PATH:
+                        continue
+                    if nkey != sink_key and nkey != start_key:
+                        continue
 
-            is_turn = direction != -1 and direction != d
-            cost = 1 + (turn_penalty if is_turn else 0) + grid._cost_map.get(nkey, 0)
+            cost = cost_tbl[dir_row + d] + cross_extra
+            if cost_map is not None:
+                cost += cost_map.get(nkey, 0)
             tentative_g = cur_g + cost
 
-            if nkey not in g_scores or tentative_g < g_scores[nkey]:
-                g_scores[nkey] = tentative_g
-                h = abs(nx - tx) + abs(ny - ty)
+            if tentative_g < g[nkey]:
+                g[nkey] = tentative_g
+                parent[nkey] = key
                 counter += 1
-                heapq.heappush(heap, (tentative_g + h, counter, nx, ny, d, key))
+                nx = nkey % W
+                ny = nkey // W
+                _heappush(heap, (tentative_g + _octile_h(nx - tx, ny - ty), counter, nkey, d))
 
     return None
 
@@ -132,21 +215,13 @@ def find_path_to_tree(
     tree: set[tuple[int, int]],
     *,
     turn_penalty: int = TURN_PENALTY,
-    allow_crossings: bool = False,
+    crossing_cost: int = 0,
+    cost_map: dict[int, float] | None = None,
 ) -> list[tuple[int, int]] | None:
     """A* from source point(s) to any cell in an existing routing tree.
 
-    Used for multi-pin nets: connect each pad to the growing tree.
-
     *source* may be a single ``(gx, gy)`` tuple **or** a set of
-    candidate source cells (multi-source A*).  Multi-source routing
-    simultaneously searches from every source cell and returns the
-    shortest path from any source to any target tree cell.  This
-    prevents parallel duplicate traces when connecting two sub-trees.
-
-    If allow_crossings=True, blocked (non-permanent) cells can be
-    traversed with a heavy penalty.  This is used during rip-up to
-    find minimum-crossing paths.
+    candidate source cells (multi-source A*).
 
     Returns the path (grid cells) or None.
     """
@@ -154,7 +229,9 @@ def find_path_to_tree(
     # Cache grid internals as locals
     W = grid.width
     H = grid.height
+    N = W * H
     cells = grid._cells
+    INF = float('inf')
 
     # ── Normalise source to a set ──────────────────────────────
     if isinstance(source, set):
@@ -168,66 +245,53 @@ def find_path_to_tree(
         cell = next(iter(overlap))
         return [cell]
 
-    # Precompute tree coordinates for fast heuristic
+    # Build a flat bytearray mask for O(1) tree membership
+    tree_mask = bytearray(N)
     tree_list = list(tree)
-    tree_xs = tuple(t[0] for t in tree_list)
-    tree_ys = tuple(t[1] for t in tree_list)
-    n_tree = len(tree_list)
+    for tx, ty in tree_list:
+        tree_mask[ty * W + tx] = 1
 
-    def min_h(x: int, y: int) -> int:
-        best = abs(x - tree_xs[0]) + abs(y - tree_ys[0])
-        for i in range(1, n_tree):
-            d = abs(x - tree_xs[i]) + abs(y - tree_ys[i])
-            if d < best:
-                best = d
-                if d == 0:
-                    return 0
-        return best
+    neighbors = _build_neighbors(W, H)
+    h_map = _octile_dt(W, H, tree_list)
+    cost_tbl = _build_cost_table(turn_penalty)
+    dcv = (0, 0, 0, 0, W, -W, W, -W)
 
-    tree_keys = frozenset(t[1] * W + t[0] for t in tree_list)
+    # ── Pre-allocated containers ───────────────────────────────
+    g = [INF] * N
+    parent = [-1] * N
+    closed = bytearray(N)
 
     # ── Seed heap with all valid source cells ──────────────────
     counter = 0
-    heap: list[tuple[int, int, int, int, int, int]] = []
-    g_scores: dict[int, int] = {}
-    source_keys: set[int] = set()
+    heap: list[tuple[float, int, int, int]] = []
 
+    protected = grid._protected
     for sx, sy in sources:
         if not (0 <= sx < W and 0 <= sy < H):
             continue
         skey = sy * W + sx
-        sval = cells[skey]
-        # Skip cells occupied by another net's trace or permanently blocked
-        if sval == TRACE_PATH or sval == PERMANENTLY_BLOCKED:
-            continue
-        source_keys.add(skey)
-        h0 = min_h(sx, sy)
-        heapq.heappush(heap, (h0, counter, sx, sy, -1, -1))
-        g_scores[skey] = 0
+        if cells[skey] != FREE and not tree_mask[skey]:
+            if (sx, sy) not in protected:
+                continue
+        g[skey] = 0
+        _heappush(heap, (h_map[skey], counter, skey, -1))
         counter += 1
 
     if not heap:
         return None
 
-    parents: dict[int, tuple[int, int]] = {}
-    closed: set[int] = set()
-
     while heap:
-        f, _cnt, cx, cy, direction, parent_key = heapq.heappop(heap)
-        key = cy * W + cx
+        f, _cnt, key, direction = _heappop(heap)
 
-        if key in closed:
+        if closed[key]:
             continue
-        closed.add(key)
-        if key not in source_keys:
-            parents[key] = (parent_key, direction)
+        closed[key] = 1
 
-        if key in tree_keys:
-            # Reconstruct path
-            path = [(cx, cy)]
+        if tree_mask[key]:
+            path = [(key % W, key // W)]
             k = key
-            while k in parents:
-                pk, _ = parents[k]
+            while True:
+                pk = parent[k]
                 if pk < 0:
                     break
                 path.append((pk % W, pk // W))
@@ -235,40 +299,64 @@ def find_path_to_tree(
             path.reverse()
             return path
 
-        cur_g = g_scores[key]
+        cur_g = g[key]
+        dir_row = (direction + 1) * 8
 
-        for d, (dx, dy) in enumerate(DIRS):
-            nx, ny = cx + dx, cy + dy
-            if not (0 <= nx < W and 0 <= ny < H):
-                continue
-            nkey = ny * W + nx
-            if nkey in closed:
+        for nkey, d in neighbors[key]:
+            if closed[nkey]:
                 continue
 
-            is_tree_cell = nkey in tree_keys
+            if d >= 4:
+                c1 = key + _DIAG_CORNER_H[d]
+                c2 = key + dcv[d]
+                if (cells[c1] == TRACE_PATH and not tree_mask[c1]
+                        and cells[c2] == TRACE_PATH and not tree_mask[c2]):
+                    continue
+
             nval = cells[nkey]
-            cell_free = nval == FREE
-
-            # Never cross an existing trace, even in crossing-aware mode
-            if not cell_free and not is_tree_cell:
-                if nval == TRACE_PATH:
+            cross_extra = 0
+            if nval != FREE and not tree_mask[nkey]:
+                if nval == PERMANENTLY_BLOCKED:
                     continue
-                if not allow_crossings or nval == PERMANENTLY_BLOCKED:
+                if crossing_cost > 0 and (nval == TRACE_PATH or nval == BLOCKED):
+                    cross_extra = crossing_cost
+                else:
                     continue
 
-            is_turn = direction != -1 and direction != d
-            cost = 1 + (turn_penalty if is_turn else 0) + grid._cost_map.get(nkey, 0)
-            if not cell_free and not is_tree_cell:
-                cost += CROSSING_PENALTY
+            cost = cost_tbl[dir_row + d] + cross_extra
+            if cost_map is not None:
+                cost += cost_map.get(nkey, 0)
             tentative_g = cur_g + cost
 
-            if nkey not in g_scores or tentative_g < g_scores[nkey]:
-                g_scores[nkey] = tentative_g
-                h = min_h(nx, ny)
+            if tentative_g < g[nkey]:
+                g[nkey] = tentative_g
+                parent[nkey] = key
                 counter += 1
-                heapq.heappush(heap, (tentative_g + h, counter, nx, ny, d, key))
+                _heappush(heap, (tentative_g + h_map[nkey], counter, nkey, d))
 
     return None
+
+
+# ── Octile distance transform ─────────────────────────────────────
+
+def _octile_dt(W: int, H: int, tree_cells: list[tuple[int, int]]) -> _array_mod.array:
+    """Return flat array of octile distances to nearest tree cell.
+
+    Combines Manhattan and Chebyshev distance transforms to produce an
+    admissible octile heuristic for 8-directional movement.
+    """
+    mask = np.ones((H, W), dtype=bool)
+    n = len(tree_cells)
+    if n > 32:
+        tc = np.array(tree_cells, dtype=np.intp)
+        mask[tc[:, 1], tc[:, 0]] = False
+    else:
+        for tx, ty in tree_cells:
+            mask[ty, tx] = False
+    manhattan = distance_transform_cdt(mask, metric='taxicab').astype(np.float32)
+    chebyshev = distance_transform_cdt(mask, metric='chessboard').astype(np.float32)
+    octile = chebyshev + _SQRT2_M1 * (manhattan - chebyshev)
+    return _array_mod.array('f', octile.tobytes())
 
 
 # ── Fast L-shaped route ────────────────────────────────────────────
@@ -279,7 +367,6 @@ def _try_l_route(
     sink: tuple[int, int],
 ) -> list[tuple[int, int]] | None:
     """Try a simple L-shaped (one-bend) route.  Returns path or None."""
-    # Try horizontal-first then vertical-first
     for h_first in (True, False):
         path = _l_route(grid, source, sink, h_first)
         if path is not None:
@@ -296,72 +383,48 @@ def _l_route(
     sx, sy = source
     tx, ty = sink
 
-    # Cache grid internals as locals
     cells = grid._cells
-    cost_map = grid._cost_map
     W = grid.width
     H = grid.height
+
+    def _ok(x: int, y: int) -> bool:
+        if not (0 <= x < W and 0 <= y < H):
+            return False
+        val = cells[y * W + x]
+        if val == FREE:
+            return True
+        if (x, y) == sink:
+            return True
+        return False
 
     path: list[tuple[int, int]] = [(sx, sy)]
 
     if horizontal_first:
-        # Horizontal leg
         dx = 1 if tx > sx else -1
         x, y = sx, sy
         while x != tx:
             x += dx
-            if not (0 <= x < W and 0 <= y < H):
-                return None
-            val = cells[y * W + x]
-            if val == TRACE_PATH:
-                return None
-            if val != FREE and (x, y) != sink:
-                return None
-            if cost_map.get(y * W + x, 0):   # avoid soft-cost zones — let A* decide
+            if not _ok(x, y):
                 return None
             path.append((x, y))
-        # Vertical leg
         dy = 1 if ty > sy else -1
         while y != ty:
             y += dy
-            if not (0 <= x < W and 0 <= y < H):
-                return None
-            val = cells[y * W + x]
-            if val == TRACE_PATH:
-                return None
-            if val != FREE and (x, y) != sink:
-                return None
-            if cost_map.get(y * W + x, 0):
+            if not _ok(x, y):
                 return None
             path.append((x, y))
     else:
-        # Vertical leg
         dy = 1 if ty > sy else -1
         x, y = sx, sy
         while y != ty:
             y += dy
-            if not (0 <= x < W and 0 <= y < H):
-                return None
-            val = cells[y * W + x]
-            if val == TRACE_PATH:
-                return None
-            if val != FREE and (x, y) != sink:
-                return None
-            if cost_map.get(y * W + x, 0):
+            if not _ok(x, y):
                 return None
             path.append((x, y))
-        # Horizontal leg
         dx = 1 if tx > sx else -1
         while x != tx:
             x += dx
-            if not (0 <= x < W and 0 <= y < H):
-                return None
-            val = cells[y * W + x]
-            if val == TRACE_PATH:
-                return None
-            if val != FREE and (x, y) != sink:
-                return None
-            if cost_map.get(y * W + x, 0):
+            if not _ok(x, y):
                 return None
             path.append((x, y))
 

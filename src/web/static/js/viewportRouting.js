@@ -18,8 +18,10 @@
 import { registerHandler } from './viewport.js';
 import { drawComponentIcon } from './componentRenderer.js';
 import { normaliseOutline, buildOutlinePath, esc, SCALE, PAD, NS, attachViewToggle } from './viewportUtils.js';
+import { getViewState, patchViewState } from './viewport.js';
+import { API, state } from './state.js';
 
-// ── Toggle controller ───────────────────────────────────────────
+// ── Toggle controller (extended with Bitmap mode) ───────────────
 
 const _toggle = attachViewToggle(
     'routing',
@@ -30,20 +32,125 @@ const _toggle = attachViewToggle(
     },
 );
 
+let _bitmapCanvas = null;
+
+function _toolbar() {
+    return document.getElementById('viewport-toolbar');
+}
+
+function _updateBitmapBtn(el, data) {
+    const tb = _toolbar();
+    if (!tb) return;
+    tb.querySelectorAll('.vp-bitmap-toggle-btn').forEach(b => b.remove());
+
+    const vs = getViewState('routing');
+    const btn = document.createElement('button');
+    btn.className = 'vp-3d-toggle-btn vp-bitmap-toggle-btn';
+    btn.textContent = 'Bitmap';
+    btn.title = 'Show trace bitmap from manufacturing';
+    if (vs.mode === 'bitmap') btn.classList.add('active');
+    btn.addEventListener('click', () => {
+        const cur = getViewState('routing').mode;
+        if (cur === 'bitmap') {
+            patchViewState('routing', { mode: '2d' });
+            _bitmapCanvas = null;
+            _toggle.render(el, data);
+            _updateBitmapBtn(el, data);
+        } else {
+            patchViewState('routing', { mode: 'bitmap' });
+            _toggle.unmount();
+            _renderBitmap(el);
+            _updateBitmapBtn(el, data);
+        }
+    });
+    tb.appendChild(btn);
+}
+
+async function _renderBitmap(el) {
+    el.innerHTML = '<p class="vp-3d-loading">Loading bitmap…</p>';
+    try {
+        const res = await fetch(
+            `${API}/api/session/manufacturing/bitmap?session=${encodeURIComponent(state.session)}`
+        );
+        if (!res.ok) {
+            el.innerHTML = '<p class="viewport-empty">No bitmap available — run manufacturing first</p>';
+            return;
+        }
+        const bm = await res.json();
+        el.innerHTML = '';
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;width:100%;height:100%;padding:12px;box-sizing:border-box;';
+
+        const canvas = document.createElement('canvas');
+        canvas.width = bm.bitmap_cols;
+        canvas.height = bm.bitmap_rows;
+        canvas.style.cssText = 'max-width:100%;max-height:calc(100% - 40px);image-rendering:pixelated;border:1px solid var(--border,#2e3d4f);border-radius:4px;background:#0d1117;';
+
+        const ctx = canvas.getContext('2d');
+        const imgData = ctx.createImageData(bm.bitmap_cols, bm.bitmap_rows);
+        const packed = Uint8Array.from(atob(bm.bitmap_b64), c => c.charCodeAt(0));
+        const byteCols = Math.ceil(bm.bitmap_cols / 8);
+        for (let r = 0; r < bm.bitmap_rows; r++) {
+            for (let c = 0; c < bm.bitmap_cols; c++) {
+                const byteIdx = r * byteCols + Math.floor(c / 8);
+                const bit = (packed[byteIdx] >> (7 - c % 8)) & 1;
+                const px = (r * bm.bitmap_cols + c) * 4;
+                if (bit) {
+                    imgData.data[px]     = 0;    // R
+                    imgData.data[px + 1] = 200;  // G
+                    imgData.data[px + 2] = 255;  // B
+                    imgData.data[px + 3] = 255;  // A
+                } else {
+                    imgData.data[px + 3] = 0;    // transparent
+                }
+            }
+        }
+        ctx.putImageData(imgData, 0, 0);
+
+        const info = document.createElement('div');
+        info.style.cssText = 'font-size:12px;color:var(--text-muted);margin-top:8px;text-align:center;';
+        info.textContent = `${bm.bitmap_cols} × ${bm.bitmap_rows} px · pixel pitch ${bm.trace_width_mm || '?'} mm`;
+
+        wrap.appendChild(canvas);
+        wrap.appendChild(info);
+        el.appendChild(wrap);
+        _bitmapCanvas = canvas;
+    } catch (e) {
+        el.innerHTML = `<p class="viewport-empty">Bitmap error: ${e.message}</p>`;
+    }
+}
+
 // ── Register ────────────────────────────────────────────────
 
 registerHandler('routing', {
     label: 'Routing Preview',
     placeholder: 'Run the router to see trace layout',
 
-    render(el, data)  { _toggle.render(el, data); },
+    render(el, data) {
+        const vs = getViewState('routing');
+        if (vs.mode === 'bitmap') {
+            _renderBitmap(el);
+            _updateBitmapBtn(el, data);
+        } else {
+            _toggle.render(el, data);
+            _updateBitmapBtn(el, data);
+        }
+    },
 
     clear(el) {
+        _bitmapCanvas = null;
         _toggle.clear(el);
+        const tb = _toolbar();
+        if (tb) tb.querySelectorAll('.vp-bitmap-toggle-btn').forEach(b => b.remove());
         el.innerHTML = '<p class="viewport-empty">Run the router to see trace layout</p>';
     },
 
-    unmount()        { _toggle.unmount(); },
+    unmount() {
+        _bitmapCanvas = null;
+        _toggle.unmount();
+        const tb = _toolbar();
+        if (tb) tb.querySelectorAll('.vp-bitmap-toggle-btn').forEach(b => b.remove());
+    },
     onResize(el,w,h) { _toggle.resize(w, h); },
 });
 
