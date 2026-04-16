@@ -183,15 +183,23 @@ def generate_trace_bitmap(
 
     ink_cells: set[tuple[int, int]] = set()
 
-    for it in result.inflated_traces:
-        bed_poly = _transform_polygon_to_bed(it.polygon, dx, dy)
-        new_cells = _polygon_cells(bed_poly, pixel_size, cols, rows)
-        if not new_cells:
-            log.warning(
-                "Trace net=%s clipped to zero pixels — may be outside bed",
-                it.net_id,
-            )
-        ink_cells |= new_cells
+    if result.inflated_traces:
+        for it in result.inflated_traces:
+            bed_poly = _transform_polygon_to_bed(it.polygon, dx, dy)
+            new_cells = _polygon_cells(bed_poly, pixel_size, cols, rows)
+            if not new_cells:
+                log.warning(
+                    "Trace net=%s clipped to zero pixels — may be outside bed",
+                    it.net_id,
+                )
+            ink_cells |= new_cells
+    else:
+        # Fallback: inflated polygons not available (e.g. loaded from JSON).
+        # Rasterize raw centreline paths at the given trace width.
+        log.info("No inflated traces — falling back to fixed-width rasterization")
+        for trace in result.traces:
+            bed_path = [(x + dx, -y + dy) for x, y in trace.path]
+            ink_cells |= _trace_cells(bed_path, trace_width_mm, pixel_size, cols, rows)
 
     lines: list[str] = []
     for r in range(rows):

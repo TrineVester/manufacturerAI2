@@ -127,7 +127,7 @@ export async function runManufacturing() {
         }
 
         // 2. Poll G-code status
-        await pollGcodeUntilDone();
+        const gcodeResult = await pollGcodeUntilDone();
 
         // 3. Run bitmap generation (async)
         showStatus('Generating trace bitmap\u2026');
@@ -151,14 +151,16 @@ export async function runManufacturing() {
             } catch { /* optional */ }
         }
 
-        // 4. Fetch manifest
+        // 4. Build manifest from gcode result
         let manifest = null;
-        try {
-            const mfRes = await fetch(
-                `${API}/api/session/manufacturing/manifest?session=${encodeURIComponent(state.session)}`
-            );
-            if (mfRes.ok) manifest = await mfRes.json();
-        } catch { /* optional */ }
+        if (gcodeResult && gcodeResult.status === 'done') {
+            manifest = {
+                gcode_bytes: gcodeResult.gcode_bytes || 0,
+                extras_gcode_bytes: gcodeResult.extras_gcode_bytes || 0,
+                message: gcodeResult.message,
+                stages: gcodeResult.stages,
+            };
+        }
 
         // 5. Render results
         renderResult(manifest, bitmapData);
@@ -217,11 +219,21 @@ export async function loadManufacturingResult() {
     let bitmapData = null;
 
     try {
-        const mfRes = await fetch(
-            `${API}/api/session/manufacturing/manifest?session=${encodeURIComponent(state.session)}`
+        const gcRes = await fetch(
+            `${API}/api/session/manufacturing/gcode?session=${encodeURIComponent(state.session)}`
         );
-        if (mfRes.ok) manifest = await mfRes.json();
-    } catch { /* no manifest yet */ }
+        if (gcRes.ok) {
+            const gc = await gcRes.json();
+            if (gc.status === 'done') {
+                manifest = {
+                    gcode_bytes: gc.gcode_bytes || 0,
+                    extras_gcode_bytes: gc.extras_gcode_bytes || 0,
+                    message: gc.message,
+                    stages: gc.stages,
+                };
+            }
+        }
+    } catch { /* no gcode yet */ }
 
     try {
         const bmRes = await fetch(
@@ -340,6 +352,15 @@ function renderResult(manifest, bitmapData) {
         btn.textContent = '⬇ Download G-code';
         btn.addEventListener('click', () => {
             window.open(`${API}/api/session/manufacturing/gcode/download?session=${encodeURIComponent(state.session)}`);
+        });
+        dlRow.appendChild(btn);
+    }
+
+    if (manifest?.extras_gcode_bytes) {
+        const btn = document.createElement('button');
+        btn.textContent = '⬇ Download Extras G-code';
+        btn.addEventListener('click', () => {
+            window.open(`${API}/api/session/manufacturing/extras-gcode/download?session=${encodeURIComponent(state.session)}`);
         });
         dlRow.appendChild(btn);
     }

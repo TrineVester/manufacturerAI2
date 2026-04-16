@@ -50,6 +50,7 @@ _COMPAT: dict[str, str] = {
     "manufacturing/bitmap/status":  "manufacture/bitmap/status",
     "manufacturing/manifest":       "manufacture/bundle",
     "manufacturing/gcode/download": "manufacture/gcode/download",
+    "manufacturing/extras-gcode/download": "manufacture/extras-gcode/download",
     "manufacturing/bitmap/download":"manufacture/bitmap/download",
     # firmware / assembly / simulator are frontend features without
     # dedicated backend routes yet.  Entries are omitted so these
