@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
-from src.session import load_session
+from src.session import load_session, create_session
 from src.agent import (
     DesignAgent, DESIGN_TOOLS,
     MODEL, TOKEN_BUDGET, get_model,
@@ -60,6 +60,24 @@ async def _run_design_background(sid: str, prompt: str, task: AgentTask):
         log.exception("Design agent background error")
         task.append_event("error", {"message": str(e)})
         task.finish("error", error=str(e))
+
+
+@router.post("/session/design")
+async def run_design_new_session(request: Request):
+    """Start the design agent for a brand-new session (auto-creates session)."""
+    body = await request.json()
+    prompt = body.get("prompt", "")
+    if not prompt:
+        raise HTTPException(400, "Missing 'prompt' in request body")
+
+    sess = create_session()
+    sess.save()
+    sid = sess.id
+
+    task = AgentTask()
+    set_agent_task(sid, "design", task)
+    task.asyncio_task = asyncio.create_task(_run_design_background(sid, prompt, task))
+    return {"status": "running", "session_id": sid}
 
 
 @router.post("/sessions/{sid}/design")

@@ -4,6 +4,7 @@ import { API, state } from './state.js';
 import { formatDate, closeModal, openModal } from './utils.js';
 import { loadCatalog } from './catalog.js';
 import { loadConversation } from './design.js';
+import { loadCircuitConversation } from './circuit.js';
 import { loadPlacementResult, resetPlacementPanel } from './placement.js';
 import { clearData as clearViewportData, setStep } from './viewport.js';
 import { enableGuideBtn, closeGuide } from './guide.js';
@@ -164,6 +165,7 @@ export async function showSessionsModal() {
                 closeGuide();          // close guide if open
                 enableGuideBtn(false); // disable guide until placement exists
                 loadConversation();
+                loadCircuitConversation();
 
                 // Enable placement tab if design exists, disable otherwise
                 const placementBtn = document.querySelector('#pipeline-nav .step[data-step="placement"]');

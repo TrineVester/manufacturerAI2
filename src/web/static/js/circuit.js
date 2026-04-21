@@ -22,13 +22,15 @@ export async function loadCircuitConversation() {
         const res = await fetch(
             `${API}/api/session/circuit/conversation?session=${encodeURIComponent(state.session)}`
         );
-        if (!res.ok) return;
-        const messages = await res.json();
-        if (!Array.isArray(messages) || messages.length === 0) return;
-        renderConversation(messages);
+        if (res.ok) {
+            const messages = await res.json();
+            if (Array.isArray(messages) && messages.length > 0) {
+                renderConversation(messages);
+            }
+        }
     } catch { /* empty chat is fine */ }
 
-    // Load existing circuit result if present
+    // Always try to show circuit result even if there is no conversation
     loadCircuitResult();
 }
 

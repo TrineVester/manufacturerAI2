@@ -26,14 +26,18 @@ export async function loadConversation() {
         const res = await fetch(
             `${API}/api/session/conversation?session=${encodeURIComponent(state.session)}`
         );
-        if (!res.ok) return;
-        const messages = await res.json();
-        if (!Array.isArray(messages) || messages.length === 0) return;
-
-        renderConversation(messages);
+        if (res.ok) {
+            const messages = await res.json();
+            if (Array.isArray(messages) && messages.length > 0) {
+                renderConversation(messages);
+            }
+        }
     } catch {
         // Silently ignore — empty chat is fine
     }
+
+    // Always try to show the design result even if there is no conversation
+    loadDesignResult();
 
     // Fetch current token count and update the meter
     if (state.session) {
@@ -70,8 +74,6 @@ function renderConversation(messages) {
         }
     }
 
-    // If a design was completed, show the design result at the bottom
-    loadDesignResult();
 }
 
 /** Render an array of content blocks (thinking, text, tool_use). */

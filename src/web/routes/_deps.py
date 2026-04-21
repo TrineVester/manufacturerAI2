@@ -96,32 +96,45 @@ def invalidate_downstream(session: Session, current_step: str) -> list[str]:
 
 # ── Session artifact readers (raw dicts) ──
 
+def _tessellate_and_cache(session: Session) -> list:
+    """Tessellate the shape in design.json, write outline.json, return vertex list."""
+    design = session.read_artifact("design.json")
+    if not design or not design.get("shape"):
+        return []
+    try:
+        from src.pipeline.design.parsing import parse_physical_design
+        physical = parse_physical_design(design)
+        outline_data = [v.to_dict() for v in physical.outline.points]
+        outline_json: dict = {"outline": outline_data}
+        if physical.outline.holes:
+            outline_json["holes"] = [
+                [v.to_dict() for v in hole] for hole in physical.outline.holes
+            ]
+        session.write_artifact("outline.json", outline_json)
+        return outline_data
+    except Exception:
+        return []
+
+
 def _read_outline(session: Session) -> list:
-    """Return the outline vertex list from outline.json, falling back to design.json."""
+    """Return the outline vertex list from outline.json, falling back to tessellation."""
     data = session.read_artifact("outline.json")
     if data is not None:
         return data.get("outline", [])
-    # Fallback: read outline from design.json
-    design = session.read_artifact("design.json")
-    if design is not None:
-        return design.get("outline", [])
-    return []
+    # Fallback: tessellate the shape and cache the result
+    return _tessellate_and_cache(session)
 
 
 def _read_outline_full(session: Session) -> list:
     """Return outline points for API responses.
 
-    Falls back to design.json when outline.json is absent.
+    Falls back to tessellation when outline.json is absent.
     Returns the raw point list (frontend expects [{x, y, ...}, ...]).
     """
     data = session.read_artifact("outline.json")
     if data is not None:
         return data.get("outline", [])
-    # Fallback: read outline from design.json
-    design = session.read_artifact("design.json")
-    if design is not None:
-        return design.get("outline", [])
-    return []
+    return _tessellate_and_cache(session)
 
 
 def require_design(session: Session) -> dict:

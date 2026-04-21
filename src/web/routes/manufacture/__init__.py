@@ -9,6 +9,7 @@ from src.web.routes.manufacture.compile import router as _compile
 from src.web.routes.manufacture.gcode import router as _gcode
 from src.web.routes.manufacture.bundle import router as _bundle
 from src.web.routes.manufacture.sse import router as _sse
+from src.web.routes.manufacture.firmware import router as _firmware
 
 router = APIRouter(tags=["manufacture"])
 router.include_router(_cancel)
@@ -20,3 +21,4 @@ router.include_router(_compile)
 router.include_router(_gcode)
 router.include_router(_bundle)
 router.include_router(_sse)
+router.include_router(_firmware)

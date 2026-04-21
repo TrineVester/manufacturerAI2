@@ -119,21 +119,27 @@ export async function runRouting() {
             if (poll.status === 'done' || poll.status === 'error' || poll.status === 'idle') break;
             if (poll.message) showStatus(`Routing… ${poll.message}`);
         }
-        if (poll?.status === 'error') {
+        const routingFailed = poll?.status === 'error';
+        if (routingFailed) {
             const msg = poll.message || poll.detail?.reason || 'Routing failed';
             showStatus(`Routing failed: ${msg}`, true);
-            renderError(msg);
-            return;
         }
 
-        // Fetch the full result
+        // Fetch the full result — the backend writes routing.json even on failure
+        // so we can always show the partial result (routed + failed nets)
         const resultRes = await fetch(`${API}/api/session/routing/result?session=${encodeURIComponent(state.session)}`);
-        if (!resultRes.ok) { showStatus('Failed to load result', true); return; }
+        if (!resultRes.ok) {
+            if (routingFailed) renderError(poll?.message || poll?.detail?.reason || 'Routing failed');
+            else showStatus('Failed to load result', true);
+            return;
+        }
         const data = await resultRes.json();
         renderResult(data);
         setViewportData('routing', data);
         stopTabFlash();
-        enableScadTab(true);
+        if (!routingFailed) {
+            enableScadTab(true);
+        }
         refreshSession();
     } catch (e) {
         if (rerun) {
@@ -168,7 +174,9 @@ export async function loadRoutingResult() {
         renderResult(data);
         setViewportData('routing', data);
         stopTabFlash();
-        enableScadTab(true);
+        if (!data.failed_nets || data.failed_nets.length === 0) {
+            enableScadTab(true);
+        }
     } catch {
         // No routing available yet — that's fine
     }

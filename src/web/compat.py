@@ -52,10 +52,9 @@ _COMPAT: dict[str, str] = {
     "manufacturing/gcode/download": "manufacture/gcode/download",
     "manufacturing/extras-gcode/download": "manufacture/extras-gcode/download",
     "manufacturing/bitmap/download":"manufacture/bitmap/download",
-    # firmware / assembly / simulator are frontend features without
-    # dedicated backend routes yet.  Entries are omitted so these
-    # fall through as 404s, which the JS error-handles gracefully.
-    "firmware/download":            "manufacture/bundle",     # best-effort: download all
+    "firmware":                      "manufacture/firmware",
+    "firmware/result":              "manufacture/firmware",
+    "firmware/download":            "manufacture/firmware/download",
 }
 
 _PREFIX = "/api/session"
