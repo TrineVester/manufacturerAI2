@@ -34,8 +34,11 @@ async def start_compile(sid: str, force: bool = Query(False)):
         return {"status": "compiling"}
 
     if not force and cur and cur["status"] in ("done", "error"):
-        return {"status": cur["status"], "message": cur.get("message", ""),
-                "stl_bytes": stl_path.stat().st_size if stl_path.exists() else 0}
+        # If the STL was deleted (e.g. SCAD re-generated), the cached "done"
+        # state is stale — fall through and re-compile instead of returning early.
+        if not (cur["status"] == "done" and not stl_path.exists()):
+            return {"status": cur["status"], "message": cur.get("message", ""),
+                    "stl_bytes": stl_path.stat().st_size if stl_path.exists() else 0}
 
     if force and cur and cur.get("cancel"):
         cur["cancel"].set()

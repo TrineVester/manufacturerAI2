@@ -171,9 +171,16 @@ def compile_scad(
     except Exception:
         pass
 
-    if proc.returncode == 0 and stl_path.exists():
-        log.info("Compiled OK → %s (%.1f kB)", stl_path.name, stl_path.stat().st_size / 1024)
-        return True, combined or "OK", stl_path
+    if proc.returncode == 0:
+        # On Windows the file handle may not be fully flushed by the time
+        # Python checks — retry for up to 5 s before giving up.
+        for _attempt in range(20):
+            if stl_path.exists() and stl_path.stat().st_size > 0:
+                break
+            time.sleep(0.25)
+        if stl_path.exists():
+            log.info("Compiled OK → %s (%.1f kB)", stl_path.name, stl_path.stat().st_size / 1024)
+            return True, combined or "OK", stl_path
 
     # Build a diagnostic message when OpenSCAD gives us nothing
     if not combined:
