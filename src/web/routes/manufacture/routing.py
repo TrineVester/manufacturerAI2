@@ -7,13 +7,13 @@ from fastapi import APIRouter, HTTPException
 
 from src.pipeline.config import TRACE_RULES
 from src.pipeline.design import parse_physical_design, parse_circuit
-from src.pipeline.design.parsing import build_design_spec
+from src.pipeline.placer import assemble_full_placement
 from src.pipeline.placer.serialization import placement_to_dict
 from src.pipeline.router import routing_to_dict
-from src.pipeline.place_and_route import place_and_route
+from src.pipeline.place_and_route import route_with_recovery
 from src.web.routes._deps import (
     get_catalog, load_session_or_404,
-    require_design, require_circuit,
+    require_design, require_circuit, require_placement,
     build_routing_response,
 )
 from src.web.tasks import PipelineTask, get_pipeline_task, set_pipeline_task
@@ -36,15 +36,15 @@ async def run_routing(sid: str):
 
     def _do():
         try:
-            # The coordinator owns placement + routing — clear both stages.
-            s.clear_stage_artifacts("placement")
             s.clear_stage_artifacts("routing")
-            s.pipeline_state.pop("placement", None)
             cat = get_catalog()
             physical = parse_physical_design(require_design(s))
             circuit = parse_circuit(require_circuit(s))
+            placement_data = require_placement(s)
 
-            design_spec = build_design_spec(physical, circuit)
+            full_placement = assemble_full_placement(
+                placement_data, physical.outline, circuit.nets, physical.enclosure,
+            )
 
             def _on_progress(info: dict) -> None:
                 partial = info.get("partial_result")
@@ -67,8 +67,8 @@ async def run_routing(sid: str):
                     cancel_event=task.cancel_event,
                 ))
 
-            par = place_and_route(
-                design_spec, cat,
+            par = route_with_recovery(
+                full_placement, cat,
                 on_progress=_on_progress,
                 cancel=task.cancel_event,
             )
@@ -78,8 +78,9 @@ async def run_routing(sid: str):
 
             result = par.routing
 
-            # Always persist the final placement (may have rotation changes)
-            s.write_artifact("placement.json", placement_to_dict(par.placement))
+            # If rotation recovery changed placement, persist the updated placement.json
+            if par.rotation_changes:
+                s.write_artifact("placement.json", placement_to_dict(par.placement))
 
             if not result.ok:
                 total = len({t.net_id for t in result.traces} | set(result.failed_nets))
@@ -100,7 +101,6 @@ async def run_routing(sid: str):
             s.write_artifact("routing.json", routing_to_dict(result))
             if result.debug_grids:
                 s.write_artifact("routing_debug.json", {"debug_grids": result.debug_grids})
-            s.pipeline_state["placement"] = "complete"
             s.pipeline_state["routing"] = "complete"
             s.save()
 
