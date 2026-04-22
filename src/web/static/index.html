@@ -190,6 +190,17 @@
                     <div id="firmware-status" class="firmware-status"></div>
                     <pre id="firmware-preview" class="firmware-preview" hidden></pre>
                     <div id="firmware-report" class="firmware-report" hidden></div>
+                    <!-- Firmware AI chat — initial generation + correction turns -->
+                    <div id="firmware-chat" class="firmware-chat">
+                        <div id="firmware-chat-messages" class="chat-messages firmware-chat-messages"></div>
+                        <div class="chat-input-row">
+                            <textarea id="firmware-chat-input" placeholder="Ask the AI to generate or revise the firmware…" rows="2"></textarea>
+                            <div class="chat-input-right">
+                                <button id="btn-send-firmware" title="Send">Send</button>
+                            </div>
+                        </div>
+                        <span id="firmware-agent-status" class="design-status-inline"></span>
+                    </div>
                 </div>
             </section>
         </div>

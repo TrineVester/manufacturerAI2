@@ -143,7 +143,7 @@ class Session:
                 "enclosure_bottom.scad", "enclosure_bottom.stl",
                 "enclosure_top.scad", "enclosure_top.stl"],
         "gcode": ["enclosure.gcode", "print_job.json"],
-        "firmware": ["firmware.ino", "sim_config.json"],
+        "firmware": ["firmware.ino", "sim_config.json", "firmware_conversation.json"],
     }
 
     _ARTIFACT_STAGE: ClassVar[dict[str, str]] = {
@@ -169,6 +169,7 @@ class Session:
         "firmware.ino": "firmware",
         "print_job.json": "gcode",
         "sim_config.json": "firmware",
+        "firmware_conversation.json": "firmware",
     }
 
     def clear_stage_artifacts(self, stage: str) -> None:

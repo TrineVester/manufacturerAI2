@@ -1,4 +1,4 @@
-"""LLM agent package — design and circuit agents."""
+"""LLM agent package — design, circuit, and firmware agents."""
 
 from .core import AgentEvent, DesignAgent, CircuitAgent
 from .tools import DESIGN_TOOLS, CIRCUIT_TOOLS

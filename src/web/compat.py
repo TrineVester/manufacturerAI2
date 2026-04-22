@@ -55,6 +55,11 @@ _COMPAT: dict[str, str] = {
     "firmware":                      "manufacture/firmware",
     "firmware/result":              "manufacture/firmware",
     "firmware/download":            "manufacture/firmware/download",
+    "firmware/agent":               "manufacture/firmware/agent",
+    "firmware/agent/stop":          "manufacture/firmware/agent/stop",
+    "firmware/agent/stream":        "manufacture/firmware/agent/stream",
+    "firmware/agent/status":        "manufacture/firmware/agent/status",
+    "firmware/conversation":        "manufacture/firmware/conversation",
 }
 
 _PREFIX = "/api/session"
