@@ -134,7 +134,8 @@ export async function runRouting() {
             return;
         }
         const data = await resultRes.json();
-        renderResult(data);
+        const rotationChanges = (!routingFailed && poll?.detail?.rotation_changes) || null;
+        renderResult(data, rotationChanges);
         setViewportData('routing', data);
         stopTabFlash();
         if (!routingFailed) {
@@ -199,7 +200,7 @@ function showResultView() {
     if (scroll) scroll.hidden = false;
 }
 
-function renderResult(data) {
+function renderResult(data, rotationChanges = null) {
     const el = infoDiv();
     if (!el) return;
 
@@ -244,8 +245,11 @@ function renderResult(data) {
     const ok = failedNets.length === 0;
     const icon = ok ? '✅' : '⚠️';
     const netCount = netOrder.length;
+    const rotNote = (rotationChanges && rotationChanges.length > 0)
+        ? ` — rotated ${rotationChanges.map(r => `<code>${esc(r.instance_id)}</code> to ${r.new_deg}°`).join(', ')}`
+        : '';
     toolbar.innerHTML = `
-        <span class="placement-toolbar-summary">${icon} Routed <strong>${netCount}</strong> net${netCount !== 1 ? 's' : ''}${failedNets.length > 0 ? `, <span style="color:var(--error)">${failedNets.length} failed</span>` : ''}</span>
+        <span class="placement-toolbar-summary">${icon} Routed <strong>${netCount}</strong> net${netCount !== 1 ? 's' : ''}${failedNets.length > 0 ? `, <span style="color:var(--error)">${failedNets.length} failed</span>` : ''}${rotNote}</span>
     `;
     const rerunBtn = document.createElement('button');
     rerunBtn.className = 'placement-toolbar-rerun';
