@@ -586,7 +586,11 @@ def sa_refine(
             current_cost = new_cost
             accepted += 1
             stagnant = 0
-            if new_cost < best_cost and _overlap_penalty(all_ids, positions) <= 0.01:
+            if (new_cost < best_cost
+                    and _overlap_penalty(all_ids, positions) <= 0.01
+                    and _outline_penalty_fast(movable, positions, prep_poly,
+                                             edge_clearance,
+                                             outline_aabb=_outline_aabb) <= 0.01):
                 best_cost = new_cost
                 best_snapshot = {
                     i: (positions[i].x, positions[i].y, positions[i].rotation)
