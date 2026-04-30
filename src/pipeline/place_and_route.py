@@ -78,7 +78,7 @@ def _recompute_pin_positions(
         cos_r = math.cos(rad)
         sin_r = math.sin(rad)
         for pin in cat.pins:
-            px, py = pin.position_mm[0], pin.position_mm[1] + side_y_offset
+            px, py = pin.position_mm[0], pin.position_mm[1] - side_y_offset
             pin_positions[pin.id] = (
                 round(x + px * cos_r - py * sin_r, 4),
                 round(y + px * sin_r + py * cos_r, 4),
@@ -329,7 +329,7 @@ def _recompute_pin_positions(
         cos_r = math.cos(rad)
         sin_r = math.sin(rad)
         for pin in cat.pins:
-            px, py = pin.position_mm[0], pin.position_mm[1] + side_y_offset
+            px, py = pin.position_mm[0], pin.position_mm[1] - side_y_offset
             pin_positions[pin.id] = (
                 round(x + px * cos_r - py * sin_r, 4),
                 round(y + px * sin_r + py * cos_r, 4),

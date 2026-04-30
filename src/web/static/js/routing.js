@@ -125,10 +125,6 @@ export async function runRouting() {
             showStatus('Router did not start — please try again', true);
             return;
         }
-        if (routingFailed) {
-            const msg = poll.message || poll.detail?.reason || 'Routing failed';
-            showStatus(`Routing failed: ${msg}`, true);
-        }
 
         // Fetch the full result — the backend writes routing.json even on failure
         // so we can always show the partial result (routed + failed nets)
@@ -143,7 +139,11 @@ export async function runRouting() {
         renderResult(data, rotationChanges);
         setViewportData('routing', data);
         stopTabFlash();
-        if (!routingFailed) {
+        // Show status AFTER renderResult so the message persists in #routing-rerun-status
+        if (routingFailed) {
+            const msg = poll.message || poll.detail?.reason || 'Routing failed';
+            showStatus(`Routing failed: ${msg}`, true);
+        } else {
             showStatus('Routing complete — check the SCAD tab next');
             markStepDone('routing');
             markStepUndone('scad', 'manufacturing');
@@ -197,9 +197,16 @@ export async function loadRoutingResult() {
 
 function showStatus(msg, isError = false) {
     const span = statusSpan();
-    if (!span) return;
-    span.textContent = msg;
-    span.style.color = isError ? 'var(--error)' : '';
+    if (span) {
+        span.textContent = msg;
+        span.style.color = isError ? 'var(--error)' : '';
+    }
+    // Also update the inline status span in the results toolbar (visible when hero is hidden)
+    const rerunStatus = document.getElementById('routing-rerun-status');
+    if (rerunStatus) {
+        rerunStatus.textContent = msg;
+        rerunStatus.style.color = isError ? 'var(--error)' : 'var(--text-muted)';
+    }
 }
 
 function showResultView() {
@@ -265,6 +272,10 @@ function renderResult(data, rotationChanges = null) {
     rerunBtn.textContent = '↻ Re-run Router';
     rerunBtn.addEventListener('click', runRouting);
     toolbar.appendChild(rerunBtn);
+    const rerunStatus = document.createElement('span');
+    rerunStatus.id = 'routing-rerun-status';
+    rerunStatus.className = 'design-status-inline';
+    toolbar.appendChild(rerunStatus);
     el.appendChild(toolbar);
 
     // Failed nets warning with pins

@@ -88,11 +88,12 @@ def _snap_to_edge(
 
     if inward_offset:
         length = math.sqrt(length_sq)
-        # Inward normal (left of edge direction for CW winding)
+        # Inward normal: right-hand perpendicular of edge direction for CW winding.
+        # snap += normal * offset moves the point toward the interior.
         nx = dy / length
         ny = -dx / length
-        snap_x -= nx * inward_offset
-        snap_y -= ny * inward_offset
+        snap_x += nx * inward_offset
+        snap_y += ny * inward_offset
 
     return (snap_x, snap_y, rotation)
 
@@ -512,7 +513,9 @@ def place_components(
             cos_r = math.cos(rad)
             sin_r = math.sin(rad)
             for pin in cat.pins:
-                px, py = pin.position_mm[0], pin.position_mm[1] + side_y_offset
+                # Negate side_y_offset: the edge-tangent rotation makes local +y
+                # point outward, so -offset moves the pin inward into the cavity.
+                px, py = pin.position_mm[0], pin.position_mm[1] - side_y_offset
                 pin_positions[pin.id] = (
                     round(x + px * cos_r - py * sin_r, 4),
                     round(y + px * sin_r + py * cos_r, 4),
