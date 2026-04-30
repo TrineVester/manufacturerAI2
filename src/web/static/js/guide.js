@@ -655,32 +655,12 @@ export function initGuide() {
     // Back button
     document.getElementById('guideBackBtn')?.addEventListener('click', closeGuide);
 
-    // Question window toggle
-    const toggleQBtn = document.getElementById('toggleQuestionWindowBtn');
-    const questionSidebar = document.getElementById('questionSidebar');
-    toggleQBtn?.addEventListener('click', () => {
-        const isVisible = questionSidebar.style.display !== 'none';
-        questionSidebar.style.display = isVisible ? 'none' : 'flex';
-        toggleQBtn.textContent = isVisible ? 'Question window: Off' : 'Question window: On';
-        toggleQBtn.classList.toggle('active', !isVisible);
-    });
-
     // Prev / Next
     document.getElementById('guidePrevBtn')?.addEventListener('click', () => {
         if (guideIndex > 0) { guideIndex--; _renderGuideStep(); }
     });
     document.getElementById('guideNextBtn')?.addEventListener('click', () => {
         if (guideIndex < guideSteps.length - 1) { guideIndex++; _renderGuideStep(); }
-    });
-
-    // Ask button (placeholder)
-    document.getElementById('guideAskBtn')?.addEventListener('click', () => {
-        const input = document.getElementById('guidePromptInput');
-        const response = document.getElementById('guideResponse');
-        const q = input?.value.trim();
-        if (!q) return;
-        if (response) response.textContent = 'Response will appear here…';
-        if (input) input.value = '';
     });
 }
 
