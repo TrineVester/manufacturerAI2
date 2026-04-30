@@ -12,6 +12,7 @@ import { runScad, loadScadResult, enableScadTab } from './scad.js';
 import { runManufacturing, loadManufacturingResult, enableManufacturingTab, initManufacturingConfig, syncManufacturingConfig } from './manufacturing.js';
 import { initFirmwarePanel, loadFirmwareResult, showFirmwareSection } from './firmware.js';
 import { initGuide, openGuide, enableGuideBtn } from './guide.js';
+import { initPipelineProgress, markStepDone, markStepUndone } from './pipelineProgress.js';
 import { initThemeSwitcher } from './theme.js';
 import { setStep } from './viewport.js';
 import './viewportDesign.js';   // registers the design viewport handler
@@ -95,6 +96,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Initialize theme switcher
     initThemeSwitcher();
+
+    // Set initial pipeline progress bar width
+    initPipelineProgress();
 
     // Initialize firmware panel
     initFirmwarePanel();
@@ -184,6 +188,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 });
 
+/** Mark a pipeline step as completed (advances the progress bar). */
+export { markStepDone, markStepUndone } from './pipelineProgress.js';
+
 export function switchStep(step) {
     state.activeStep = step;
     document.querySelectorAll('#pipeline-nav .step[data-step]').forEach(btn => {
@@ -198,4 +205,8 @@ export function switchStep(step) {
     });
     // Sync viewport
     setStep(step);
+    // Reload conversation + result so the tab reflects any background agent activity
+    if (step === 'design') loadConversation();
+    if (step === 'circuit') loadCircuitConversation();
+    if (step === 'placement') loadPlacementResult();
 }

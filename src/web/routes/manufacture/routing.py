@@ -120,6 +120,7 @@ async def run_routing(sid: str):
                 detail={"rotation_changes": rotation_info} if rotation_info else None,
             ))
         except Exception as e:
+            log.error("Routing _do() failed for session %s: %s", sid, e, exc_info=True)
             detail = {
                 "error": "routing_failed",
                 "reason": str(e),

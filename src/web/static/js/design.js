@@ -5,8 +5,9 @@ import { onSessionCreated, setSessionLabel } from './session.js';
 import { setData as setViewportData, clearData as clearViewportData } from './viewport.js';
 import { enablePlacementTab, resetPlacementPanel } from './placement.js';
 import { resetRoutingPanel } from './routing.js';
-import { enableCircuitTab, resetCircuitPanel } from './circuit.js';
+import { enableCircuitTab, resetCircuitPanel, sendCircuitPrompt } from './circuit.js';
 import { getSelectedModel } from './theme.js';
+import { markStepDone, markStepUndone } from './pipelineProgress.js';
 
 const messagesDiv = () => document.getElementById('chat-messages');
 const statusSpan = () => document.getElementById('design-status');
@@ -60,13 +61,14 @@ function renderConversation(messages) {
         if (msg.role === 'user') {
             if (typeof msg.content === 'string') {
                 appendMessage('user', msg.content);
-            }
-            // tool_result arrays — render as grouped results
-            if (Array.isArray(msg.content)) {
-                const toolResults = msg.content.filter(b => b.type === 'tool_result');
-                if (toolResults.length > 0) {
-                    // Results are rendered inline with the preceding tool group
-                    // (already done via appendToolCallStatic marking ✓)
+            } else if (Array.isArray(msg.content)) {
+                // Extract user-visible text blocks, skipping injected context preambles
+                for (const block of msg.content) {
+                    if (block.type === 'text' && block.text &&
+                        !block.text.startsWith('<!-- design-context -->') &&
+                        !block.text.startsWith('<!-- circuit-context -->')) {
+                        appendMessage('user', block.text);
+                    }
                 }
             }
         } else if (msg.role === 'assistant') {
@@ -329,18 +331,24 @@ async function consumeSSE(response) {
                     appendDesignResult(data.design);
                     setViewportData('design', data.design);
                     statusSpan().textContent = 'Design complete!';
+                    markStepDone('design');
+                    markStepUndone('placement', 'routing', 'scad', 'manufacturing');
                     // Enable circuit step now that design exists
                     enableCircuitTab(true);
                     // Also enable placement (can skip circuit)
                     enablePlacementTab(true);
                     // Invalidate downstream
                     resetCircuitPanel();
+                    // Auto-run circuit agent now that a fresh design exists
+                    sendCircuitPrompt();
                     resetPlacementPanel();
                     resetRoutingPanel();
-                    // Disable routing tab until new placement
+                    // Disable routing, scad, manufacturing tabs until new placement/routing/scad
                     {
-                        const rBtn = document.querySelector('#pipeline-nav .step[data-step="routing"]');
-                        if (rBtn) { rBtn.disabled = true; rBtn.classList.remove('tab-flash'); }
+                        for (const s of ['routing', 'scad', 'manufacturing']) {
+                            const b = document.querySelector(`#pipeline-nav .step[data-step="${s}"]`);
+                            if (b) { b.disabled = true; b.classList.remove('tab-flash'); }
+                        }
                     }
                     break;
 

@@ -9,14 +9,14 @@ from fastapi.responses import StreamingResponse
 
 import anthropic
 
-from src.agent import CircuitAgent, build_circuit_user_prompt, build_circuit_prompt, CIRCUIT_TOOLS, MODEL, TOKEN_BUDGET, prune_messages, sanitize_messages, get_model
+from src.agent import CircuitAgent, DesignAgent, build_circuit_user_prompt, build_circuit_prompt, CIRCUIT_TOOLS, MODEL, TOKEN_BUDGET, prune_messages, sanitize_messages, get_model
 from src.pipeline.config import get_printer
 from src.pipeline.design import (
     parse_physical_design, parse_circuit, build_design_spec, validate_design,
 )
 from src.web.routes._deps import (
     get_catalog, load_session_or_404, invalidate_downstream,
-    enrich_components,
+    enrich_components, enrich_design,
 )
 from src.web.tasks import AgentTask, get_agent_task, set_agent_task
 
@@ -25,8 +25,126 @@ log = logging.getLogger(__name__)
 router = APIRouter(tags=["circuit"])
 
 
+async def _auto_fix_then_revalidate(sid: str, feedback: str, circuit_task: AgentTask) -> None:
+    """Run the design agent to fix enclosure errors, then re-validate the pending circuit.
+
+    All events are appended to *circuit_task* so the circuit SSE stream shows the
+    full story without the user having to switch tabs.  The design task is also
+    registered so the design tab can show progress after the fact.
+    """
+    log.info("Auto-fix: running design agent to fix enclosure for session %s", sid)
+
+    # Announce what is happening in the chat stream
+    circuit_task.append_event("message_start", {})
+    circuit_task.append_event("message_delta", {
+        "text": (
+            "**Enclosure needs adjustment — auto-fixing now.**\n\n"
+            "Handing the following errors to the design agent:\n\n"
+            + "\n".join(f"- {line.lstrip(' -')}" for line in feedback.strip().splitlines() if line.strip())
+        ),
+    })
+    circuit_task.append_event("block_stop", {})
+
+    try:
+        sess = load_session_or_404(sid)
+        cat = get_catalog()
+
+        prompt = (
+            "The circuit has been submitted and is electrically valid, but the enclosure "
+            "needs adjustment before it can be finalised. The following constraints are "
+            "not yet satisfied:\n\n"
+            f"{feedback}\n\n"
+            "Please fix the enclosure (height, outline size, etc.) so that all components "
+            "fit. Do not change the component list or circuit wiring."
+        )
+
+        # Register a design task so the design tab shows progress
+        from src.web.tasks import AgentTask as _AgentTask
+        design_task = _AgentTask()
+        set_agent_task(sid, "design", design_task)
+
+        agent = DesignAgent(cat, sess)
+        async for event in agent.run(prompt, cancel_event=circuit_task.cancel_event):
+            if event.type == "checkpoint":
+                design_task.last_save_cursor = len(design_task.events)
+                continue
+            if event.type == "design" and event.data:
+                design = event.data.get("design")
+                if design:
+                    enrich_design(design, cat, session=sess)
+            # Only register events in the design task — circuit tab stays clean
+            design_task.append_event(event.type, event.data or {})
+        design_task.finish("done")
+
+    except asyncio.CancelledError:
+        return
+    except Exception as e:
+        log.exception("Auto-fix design agent error")
+        circuit_task.append_event("error", {"message": f"Auto-fix (design) failed: {e}"})
+        return
+
+    # Re-validate the pending circuit against the updated design
+    circuit_task.append_event("message_start", {})
+    circuit_task.append_event("message_delta", {"text": "\n\n**Re-validating circuit** against updated enclosure…"})
+    circuit_task.append_event("block_stop", {})
+
+    try:
+        sess = load_session_or_404(sid)  # reload after design agent ran
+        design_data = sess.read_artifact("design.json")
+        circuit_data = sess.read_artifact("circuit_pending.json")
+
+        if not design_data or not circuit_data:
+            circuit_task.append_event("message_start", {})
+            circuit_task.append_event("message_delta", {"text": "\nNo pending circuit found — nothing to revalidate."})
+            circuit_task.append_event("block_stop", {})
+            return
+
+        cat = get_catalog()
+        physical = parse_physical_design(design_data)
+        circuit = parse_circuit(circuit_data)
+        full_spec = build_design_spec(physical, circuit)
+        printer = get_printer(sess.printer_id)
+        errors = validate_design(full_spec, cat, printer=printer)
+
+    except Exception as e:
+        log.exception("Auto-fix revalidation error")
+        circuit_task.append_event("error", {"message": f"Revalidation failed: {e}"})
+        return
+
+    if errors:
+        error_list = "\n".join(f"  - {e}" for e in errors)
+        circuit_task.append_event("message_start", {})
+        circuit_task.append_event("message_delta", {
+            "text": (
+                "\n\nEnclosure still has issues after auto-fix — manual intervention needed:\n\n"
+                + "\n".join(f"- {e}" for e in errors)
+            ),
+        })
+        circuit_task.append_event("block_stop", {})
+        circuit_task.append_event("design_feedback", {"message": error_list})
+        return
+
+    # All good — promote pending circuit to final
+    enrich_components(circuit_data.get("components", []), cat)
+    sess.write_artifact("circuit.json", circuit_data)
+    sess.delete_artifact("circuit_pending.json")
+    sess.pipeline_state["circuit"] = "complete"
+    invalidated = sess.invalidate_downstream("circuit")
+    sess.save()
+
+    circuit_task.append_event("circuit", {"circuit": circuit_data})
+    if invalidated:
+        circuit_task.append_event("invalidated", {
+            "invalidated_steps": invalidated,
+            "artifacts": sess.artifacts,
+            "pipeline_errors": sess.pipeline_errors,
+        })
+    log.info("Auto-fix complete: circuit validated and saved for session %s", sid)
+
+
 async def _run_circuit_background(sid: str, prompt: str, task: AgentTask, invalidated: list[str]):
     """Run the circuit agent in the background, accumulating events in *task*."""
+    design_feedback_msg: str | None = None
     try:
         sess = load_session_or_404(sid)
         cat = get_catalog()
@@ -47,7 +165,15 @@ async def _run_circuit_background(sid: str, prompt: str, task: AgentTask, invali
                 circuit = event.data.get("circuit")
                 if circuit:
                     enrich_components(circuit.get("components", []), cat)
+            if event.type == "design_feedback" and event.data:
+                design_feedback_msg = event.data.get("message", "")
             task.append_event(event.type, event.data or {})
+
+        # If the circuit is pending because the enclosure needs fixing,
+        # automatically run the design agent and revalidate.
+        if design_feedback_msg and not task.cancel_event.is_set():
+            await _auto_fix_then_revalidate(sid, design_feedback_msg, task)
+
         task.finish("done")
     except asyncio.CancelledError:
         task.finish("done", error="Cancelled")
@@ -203,10 +329,19 @@ async def circuit_agent_status(sid: str):
 async def get_circuit(sid: str):
     s = load_session_or_404(sid)
     data = s.read_artifact("circuit.json")
+    pending = False
+    if data is None:
+        data = s.read_artifact("circuit_pending.json")
+        pending = True
     if data is None:
         raise HTTPException(404, "No circuit yet")
     cat = get_catalog()
     enrich_components(data.get("components", []), cat)
+    if pending:
+        data = dict(data)
+        data["_pending"] = True
+        errors = s.pipeline_errors.get("circuit") or s.pipeline_errors.get("design") or ""
+        data["_pending_reason"] = errors
     return data
 
 

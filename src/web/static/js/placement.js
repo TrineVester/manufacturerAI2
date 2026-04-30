@@ -6,6 +6,7 @@ import { enableGuideBtn } from './guide.js';
 import { enableRoutingTab, markRoutingStale } from './routing.js';
 import { refreshSession } from './session.js';
 import { sendDesignPrompt } from './design.js';
+import { markStepDone, markStepUndone } from './pipelineProgress.js';
 
 function addStaleBanner(el, msg) {
     if (!el) return;
@@ -99,12 +100,14 @@ export async function runPlacement() {
         // Poll until placement completes (async backend)
         showStatus('Placing components…');
         let poll;
-        for (let i = 0; i < 120; i++) {
+        for (let i = 0; i < 360; i++) {
             await new Promise(r => setTimeout(r, 1000));
             const pr = await fetch(`${API}/api/session/placement/status?session=${encodeURIComponent(state.session)}`);
+            if (!pr.ok) break;
             poll = await pr.json();
             if (poll.status === 'done' || poll.status === 'error' || poll.status === 'idle') break;
-            if (poll.message) showStatus(`Placing… ${poll.message}`);
+            if (i > 0 && i % 10 === 0) showStatus(`Placing components… (${i}s)`);
+            else if (poll.message) showStatus(`Placing… ${poll.message}`);
         }
         if (poll?.status === 'error') {
             const msg = poll.message || poll.detail?.reason || 'Placement failed';
@@ -112,15 +115,26 @@ export async function runPlacement() {
             renderError(msg, poll.detail);
             return;
         }
+        if (!poll || poll.status !== 'done') {
+            showStatus('Placement did not complete — please try again', true);
+            return;
+        }
 
         // Fetch the full result
         const resultRes = await fetch(`${API}/api/session/placement/result?session=${encodeURIComponent(state.session)}`);
-        if (!resultRes.ok) { showStatus('Failed to load result', true); return; }
+        if (!resultRes.ok) {
+            const errBody = await resultRes.json().catch(() => ({}));
+            const errMsg = typeof errBody.detail === 'string' ? errBody.detail : JSON.stringify(errBody.detail || resultRes.statusText);
+            showStatus(`Failed to load result (${resultRes.status}): ${errMsg}`, true);
+            return;
+        }
         const data = await resultRes.json();
         renderResult(data);
         setViewportData('placement', data);
         stopTabFlash();
         enableGuideBtn(true);
+        markStepDone('placement');
+        markStepUndone('routing', 'scad', 'manufacturing');
         // Mark routing as stale (invalidated by new placement)
         markRoutingStale();
         enableRoutingTab(true);
@@ -161,6 +175,7 @@ export async function loadPlacementResult() {
         setViewportData('placement', data);
         stopTabFlash();
         enableGuideBtn(true);
+        markStepDone('placement');
         enableRoutingTab(true);
     } catch {
         // No placement available yet — that's fine

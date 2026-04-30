@@ -3,6 +3,7 @@
 import { API, state } from './state.js';
 import { setData as setViewportData } from './viewport.js';
 import { enableManufacturingTab } from './manufacturing.js';
+import { markStepDone, markStepUndone } from './pipelineProgress.js';
 
 // Active poll timer handle
 let _pollTimer = null;
@@ -105,6 +106,8 @@ export async function runScad() {
         const data = await resultRes.json();
         renderResult(data);
         stopTabFlash();
+        markStepDone('scad');
+        markStepUndone('manufacturing');
         enableManufacturingTab(true);
         // Kick off STL compile in the background
         startStlCompile(data);
@@ -138,6 +141,7 @@ export async function loadScadResult() {
         const data = await res.json();
         renderResult(data);
         stopTabFlash();
+        markStepDone('scad');
         enableManufacturingTab(true);
         // Also check STL status
         pollOrRestoreStl(data);

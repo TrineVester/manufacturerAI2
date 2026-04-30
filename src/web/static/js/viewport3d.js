@@ -192,13 +192,28 @@ export function buildSceneContent(data) {
         verts, corners, zTops, defaultZ);
 
     // Build ui_placements lookup before shell so lid cutouts can use it.
+    // For side-mount components (edge_index != null) project the placement
+    // onto the named edge so the 3D position matches the 2D rendering and the
+    // placer/SCAD generator interpretation.
     const uiPos = {};
     (data.ui_placements ?? []).forEach(up => {
-        uiPos[up.instance_id] = {
-            x_mm: up.x_mm,
-            y_mm: up.y_mm,
-            rotation_deg: up.rotation_deg ?? 0,
-        };
+        let x = up.x_mm, y = up.y_mm, rot = up.rotation_deg ?? 0;
+        if (up.edge_index != null && verts.length >= 2) {
+            const n = verts.length;
+            const i0 = up.edge_index % n;
+            const v0 = verts[i0], v1 = verts[(i0 + 1) % n];
+            const ex = v1[0] - v0[0], ey = v1[1] - v0[1];
+            const lsq = ex * ex + ey * ey;
+            if (lsq > 1e-12) {
+                const t = Math.max(0, Math.min(1,
+                    ((up.x_mm - v0[0]) * ex + (up.y_mm - v0[1]) * ey) / lsq
+                ));
+                x = v0[0] + t * ex;
+                y = v0[1] + t * ey;
+                rot = Math.atan2(ey, ex) * 180 / Math.PI;
+            }
+        }
+        uiPos[up.instance_id] = { x_mm: x, y_mm: y, rotation_deg: rot };
     });
 
     // 1. Enclosure shell

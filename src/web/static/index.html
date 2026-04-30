@@ -50,12 +50,15 @@
     </header>
 
     <nav id="pipeline-nav">
-        <button class="step active" data-step="design">1. Design</button>
-        <button class="step" data-step="circuit" disabled>2. Circuit</button>
-        <button class="step" data-step="placement" disabled>3. Placement</button>
-        <button class="step" data-step="routing" disabled>4. Routing</button>
-        <button class="step" data-step="scad" disabled>5. SCAD</button>
-        <button class="step" data-step="manufacturing" disabled>6. Manufacturing</button>
+        <div id="pipeline-steps">
+            <button class="step active" data-step="design">1. Design</button>
+            <button class="step" data-step="circuit" disabled>2. Circuit</button>
+            <button class="step" data-step="placement" disabled>3. Placement</button>
+            <button class="step" data-step="routing" disabled>4. Routing</button>
+            <button class="step" data-step="scad" disabled>5. SCAD</button>
+            <button class="step" data-step="manufacturing" disabled>6. Manufacturing</button>
+            <div id="pipeline-progress"><div id="pipeline-progress-fill"></div></div>
+        </div>
         <div class="nav-spacer"></div>
         <button class="step" id="btn-guide" disabled>Guide</button>
         <button class="step" id="btn-catalog">Catalog</button>
@@ -80,10 +83,10 @@
                                 </svg>
                                 <span class="token-label" id="token-label">0k / 50k</span>
                             </div>
+                            <span id="design-status" class="design-status-inline"></span>
                             <button id="btn-send-design" title="Send">Send</button>
                         </div>
                     </div>
-                    <span id="design-status" class="design-status-inline"></span>
                 </div>
             </section>
 
@@ -94,10 +97,10 @@
                     <div class="chat-input-row">
                         <textarea id="circuit-chat-input" placeholder="Optionally describe circuit requirements, or just hit Send to auto-generate…" rows="2"></textarea>
                         <div class="chat-input-right">
+                            <span id="circuit-status" class="design-status-inline"></span>
                             <button id="btn-send-circuit" title="Send">Send</button>
                         </div>
                     </div>
-                    <span id="circuit-status" class="design-status-inline"></span>
                 </div>
             </section>
 

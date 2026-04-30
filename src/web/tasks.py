@@ -116,3 +116,11 @@ def get_all_pipeline_tasks(sid: str) -> dict[str, PipelineTask]:
             for (s, step), task in _pipeline_tasks.items()
             if s == sid
         }
+
+
+def cancel_all_pipeline_tasks(sid: str) -> None:
+    """Signal every running pipeline task for *sid* to abort."""
+    with _lock:
+        for (s, step), task in _pipeline_tasks.items():
+            if s == sid and task.status == "running":
+                task.cancel_event.set()

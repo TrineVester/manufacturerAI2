@@ -168,6 +168,51 @@ def validate_physical_design(
                             f"UI placement '{up.instance_id}' at "
                             f"({up.x_mm}, {up.y_mm}) is outside the outline"
                         )
+                        continue
+
+                    # ── Footprint containment (body + button_shape) ──
+                    import math as _math
+                    cat = catalog_map.get(up.catalog_id) if up.catalog_id else None
+
+                    # Radius from physical body diagonal
+                    body_r = 0.0
+                    if cat and cat.body:
+                        w = getattr(cat.body, 'width_mm', None) or 0.0
+                        l = getattr(cat.body, 'length_mm', None) or 0.0
+                        if w or l:
+                            body_r = 0.5 * _math.sqrt(w * w + l * l)
+
+                    # Radius from custom button_shape
+                    shape_r = 0.0
+                    shape_source = ''
+                    bs = up.button_shape
+                    if isinstance(bs, dict):
+                        r = bs.get('radius')
+                        if isinstance(r, (int, float)):
+                            shape_r = float(r)
+                            shape_source = 'button_shape radius'
+                        elif isinstance(r, (list, tuple)) and len(r) >= 1:
+                            shape_r = float(max(r))
+                            shape_source = 'button_shape radius'
+                        else:
+                            w2 = bs.get('size', [0, 0])
+                            if isinstance(w2, (list, tuple)) and len(w2) >= 2:
+                                shape_r = 0.5 * _math.sqrt(w2[0] ** 2 + w2[1] ** 2)
+                                shape_source = 'button_shape size'
+
+                    keepout_r = max(body_r, shape_r)
+                    keepout_source = (
+                        'button_shape' if shape_r >= body_r and shape_r > 0
+                        else 'body diagonal' if body_r > 0
+                        else None
+                    )
+                    if keepout_r > 0 and not poly.contains(pt.buffer(keepout_r)):
+                        errors.append(
+                            f"UI placement '{up.instance_id}' at ({up.x_mm}, {up.y_mm}): "
+                            f"footprint (r={keepout_r:.1f} mm from {keepout_source}) "
+                            f"extends outside the outline — move the component further "
+                            f"from the edge or reduce the {keepout_source} size"
+                        )
         except Exception:
             pass
 
@@ -205,6 +250,51 @@ def validate_physical_design(
                     f"UI placement '{up.instance_id}': edge_index {up.edge_index} "
                     f"out of range (0–{len(physical.outline.points) - 1})"
                 )
+            else:
+                # Validate that the coordinates are actually near the named edge.
+                # A common mistake is specifying a plausible-looking XY position
+                # (e.g. the top of the device) together with an incorrect edge_index
+                # (e.g. a side wall edge).  Project the point onto the edge and
+                # check that the distance is within tolerance.
+                import math as _math
+                verts = physical.outline.vertices
+                n = len(verts)
+                i0 = up.edge_index % n
+                v0, v1 = verts[i0], verts[(i0 + 1) % n]
+                dx, dy = v1[0] - v0[0], v1[1] - v0[1]
+                lsq = dx * dx + dy * dy
+                if lsq > 1e-12:
+                    t = max(0.0, min(1.0, (
+                        (up.x_mm - v0[0]) * dx + (up.y_mm - v0[1]) * dy
+                    ) / lsq))
+                    sx = v0[0] + t * dx
+                    sy = v0[1] + t * dy
+                    dist = _math.sqrt((up.x_mm - sx) ** 2 + (up.y_mm - sy) ** 2)
+                    _EDGE_TOLERANCE_MM = 5.0
+                    if dist > _EDGE_TOLERANCE_MM:
+                        # Find the closest edge so we can suggest the right index
+                        best_i, best_d = 0, float('inf')
+                        for ei in range(n):
+                            e0, e1 = verts[ei], verts[(ei + 1) % n]
+                            edx, edy = e1[0] - e0[0], e1[1] - e0[1]
+                            elsq = edx * edx + edy * edy
+                            if elsq < 1e-12:
+                                continue
+                            et = max(0.0, min(1.0, (
+                                (up.x_mm - e0[0]) * edx + (up.y_mm - e0[1]) * edy
+                            ) / elsq))
+                            esx = e0[0] + et * edx
+                            esy = e0[1] + et * edy
+                            ed = _math.sqrt((up.x_mm - esx) ** 2 + (up.y_mm - esy) ** 2)
+                            if ed < best_d:
+                                best_d = ed
+                                best_i = ei
+                        errors.append(
+                            f"UI placement '{up.instance_id}': coordinates "
+                            f"({up.x_mm}, {up.y_mm}) are {dist:.1f} mm from "
+                            f"edge_index {up.edge_index} (tolerance {_EDGE_TOLERANCE_MM} mm). "
+                            f"Did you mean edge_index {best_i}?"
+                        )
 
     return errors
 

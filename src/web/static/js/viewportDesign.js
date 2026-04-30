@@ -15,10 +15,11 @@
  * }
  */
 
-import { registerHandler } from './viewport.js';
+import { registerHandler, setData, clearData } from './viewport.js';
 import { drawComponentIcon } from './componentRenderer.js';
 import { normaliseOutline, buildOutlinePath, snapToEdge, esc, SCALE, PAD, NS, attachViewToggle } from './viewportUtils.js';
 import { state, API } from './state.js';
+import { markStepUndone } from './pipelineProgress.js';
 
 // ── Toggle controller ───────────────────────────────────────────
 
@@ -79,6 +80,123 @@ function buildPreview(design) {
 
 
 // ── Outline SVG ───────────────────────────────────────────────
+
+/** Ray-casting point-in-polygon test (outline verts as [[x,y], ...] in mm). */
+function _pointInPoly(x, y, verts) {
+    let inside = false;
+    for (let i = 0, j = verts.length - 1; i < verts.length; j = i++) {
+        const [xi, yi] = verts[i];
+        const [xj, yj] = verts[j];
+        if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) {
+            inside = !inside;
+        }
+    }
+    return inside;
+}
+
+/**
+ * Attach pointer-drag behaviour to a UI-placement SVG group.
+ * On drag-end the new position is PATCHed to the server; on success
+ * the design viewport is re-rendered with the returned design data.
+ */
+function _attachDrag(g, up, svg, ox, oy, verts) {
+    g.style.cursor = 'grab';
+    g.style.pointerEvents = 'bounding-box';
+
+    let active = false;
+    let startClient = null;
+    let svgScale = null; // { x: viewBoxPx/screenPx, y: ... }
+
+    g.addEventListener('pointerdown', (e) => {
+        if (!state.session) return;
+        e.preventDefault();
+        e.stopPropagation();
+        g.setPointerCapture(e.pointerId);
+        active = true;
+        startClient = { x: e.clientX, y: e.clientY };
+        const rect = svg.getBoundingClientRect();
+        const vb = svg.getAttribute('viewBox').split(' ').map(Number);
+        svgScale = { x: vb[2] / rect.width, y: vb[3] / rect.height };
+        g.style.cursor = 'grabbing';
+    });
+
+    g.addEventListener('pointermove', (e) => {
+        if (!active) return;
+        e.preventDefault();
+        const dx = (e.clientX - startClient.x) * svgScale.x;
+        const dy = (e.clientY - startClient.y) * svgScale.y;
+        const newXmm = up.x_mm + dx / SCALE;
+        const newYmm = up.y_mm + dy / SCALE;
+        const inside = _pointInPoly(newXmm, newYmm, verts);
+        g.style.opacity = inside ? '0.85' : '0.4';
+        g.setAttribute('transform', `translate(${dx}, ${dy})`);
+    });
+
+    g.addEventListener('pointerup', async (e) => {
+        if (!active) return;
+        active = false;
+        g.releasePointerCapture(e.pointerId);
+        g.style.cursor = 'grab';
+        g.style.opacity = '';
+
+        const dx = (e.clientX - startClient.x) * svgScale.x;
+        const dy = (e.clientY - startClient.y) * svgScale.y;
+
+        // Ignore tiny jitters
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) {
+            g.setAttribute('transform', '');
+            return;
+        }
+
+        const newXmm = Math.round((up.x_mm + dx / SCALE) * 100) / 100;
+        const newYmm = Math.round((up.y_mm + dy / SCALE) * 100) / 100;
+
+        try {
+            const res = await fetch(
+                `/api/sessions/${encodeURIComponent(state.session)}/design/ui-placement/${encodeURIComponent(up.instance_id)}`,
+                {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ x_mm: newXmm, y_mm: newYmm }),
+                },
+            );
+            if (res.ok) {
+                const newDesign = await res.json();
+                setData('design', newDesign);
+                // Placement, routing, SCAD and manufacturing are all invalidated by position changes.
+                // Clear cached data (not just stale flag) so downstream viewports show the
+                // placeholder state rather than outdated component positions.
+                clearData('placement');
+                clearData('routing');
+                clearData('scad');
+                clearData('manufacturing');
+                // Disable the downstream nav tabs so the progress bar shrinks back.
+                for (const s of ['placement', 'routing', 'scad', 'manufacturing']) {
+                    const b = document.querySelector(`#pipeline-nav .step[data-step="${s}"]`);
+                    if (b) { b.disabled = true; b.classList.remove('tab-flash'); }
+                }
+                markStepUndone('placement', 'routing', 'scad', 'manufacturing');
+                // Also reset the placement and routing info panels (left-side result panels)
+                // so they return to the "run" hero state instead of showing stale results.
+                const { resetPlacementPanel } = await import('./placement.js');
+                const { resetRoutingPanel } = await import('./routing.js');
+                resetPlacementPanel();
+                resetRoutingPanel();
+            } else {
+                g.setAttribute('transform', '');
+            }
+        } catch {
+            g.setAttribute('transform', '');
+        }
+    });
+
+    g.addEventListener('pointercancel', () => {
+        active = false;
+        g.style.cursor = 'grab';
+        g.style.opacity = '';
+        g.setAttribute('transform', '');
+    });
+}
 
 function buildOutlineSVG(design) {
     const { outline, ui_placements = [] } = design;
@@ -182,6 +300,9 @@ function buildOutlineSVG(design) {
                 drawComponentIcon(svg, fakeComp, ox, oy, SCALE, {
                     color, bodyOpacity: 0.2, showPins: !!(comp.pins),
                 });
+                // Attach drag-to-reposition
+                const g = svg.querySelector(`g.vp-comp-group[data-instance-id="${up.instance_id}"]`);
+                if (g) _attachDrag(g, up, svg, ox, oy, verts);
             } else {
                 const cx = ox + up.x_mm * SCALE;
                 const cy = oy + up.y_mm * SCALE;
@@ -451,11 +572,31 @@ function _mountEdgePanel(host, initialData, scene) {
         const sid = state.session;
         if (!sid) return;
         try {
-            await fetch(`${API}/api/session/design/enclosure?session=${encodeURIComponent(sid)}`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ [`edge_${side}`]: { type, size_mm } }),
-            });
+            const res = await fetch(
+                `${API}/api/sessions/${encodeURIComponent(sid)}/design/enclosure`,
+                {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ [`edge_${side}`]: { type, size_mm } }),
+                },
+            );
+            if (res.ok) {
+                const newDesign = await res.json();
+                design = newDesign;
+                // Sync design viewport cache so switching to 2D shows the updated outline
+                setData('design', newDesign);
+                // Enclosure shape change invalidates SCAD and manufacturing output
+                clearData('scad');
+                clearData('manufacturing');
+                // Disable the downstream nav tabs so the progress bar shrinks back.
+                for (const s of ['scad', 'manufacturing']) {
+                    const b = document.querySelector(`#pipeline-nav .step[data-step="${s}"]`);
+                    if (b) { b.disabled = true; b.classList.remove('tab-flash'); }
+                }
+                markStepUndone('scad', 'manufacturing');
+                const { resetScadPanel } = await import('./scad.js');
+                resetScadPanel();
+            }
         } catch { /* non-fatal — user sees the live preview regardless */ }
     }
 

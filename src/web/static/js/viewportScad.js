@@ -84,8 +84,8 @@ function createScadScene(container) {
     let meshGroup = null;
     let extrasGroup = null;
     let animId = null;
-    // Shared translation offset so extras align with the enclosure
-    let _enclosureCentre = new THREE.Vector3();
+    // Enclosure bounding info used to place extras beside it on the build plate
+    let _enclosureHalfX = 0;
     let _enclosureMinY = 0;
 
     function animate() {
@@ -130,7 +130,7 @@ function createScadScene(container) {
                 const box = geometry.boundingBox;
                 const centre = new THREE.Vector3();
                 box.getCenter(centre);
-                _enclosureCentre.copy(centre);
+                _enclosureHalfX = (box.max.x - box.min.x) / 2;
                 _enclosureMinY = box.min.y;
                 geometry.translate(-centre.x, -box.min.y, -centre.z);
 
@@ -172,8 +172,12 @@ function createScadScene(container) {
             (geometry) => {
                 geometry.computeVertexNormals();
                 geometry.rotateX(-Math.PI / 2);
-                // Apply the same translation as the enclosure so they align
-                geometry.translate(-_enclosureCentre.x, -_enclosureMinY, -_enclosureCentre.z);
+                // Place extras beside the enclosure on the build plate.
+                // The enclosure is centred at X=0 and spans ±_enclosureHalfX.
+                // Extras start at X=0 in their own SCAD space, so shift them
+                // to start just past the enclosure's right edge.
+                const EXTRAS_GAP = 15;
+                geometry.translate(_enclosureHalfX + EXTRAS_GAP, -_enclosureMinY, 0);
                 const mat = new THREE.MeshPhongMaterial({
                     color: 0xd29922,
                     shininess: 50,

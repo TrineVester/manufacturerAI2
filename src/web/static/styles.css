@@ -159,6 +159,33 @@ button:disabled {
     padding: 8px 24px;
     background: var(--surface);
     border-bottom: 1px solid var(--border);
+    align-items: center;
+}
+
+#pipeline-steps {
+    display: flex;
+    gap: 2px;
+    position: relative;
+    padding-bottom: 3px; /* room for the bar */
+}
+
+#pipeline-progress {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+#pipeline-progress-fill {
+    height: 100%;
+    width: 16.667%; /* 1 of 6 steps enabled at start */
+    background: #22c55e;
+    border-radius: 2px;
+    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 #pipeline-nav .nav-spacer {
@@ -720,6 +747,13 @@ main {
     background: rgba(220, 60, 60, 0.15);
     color: #f87171;
     border: 1px solid rgba(220, 60, 60, 0.3);
+}
+
+.chat-bubble.warning {
+    align-self: flex-start;
+    background: rgba(234, 179, 8, 0.12);
+    color: #fbbf24;
+    border: 1px solid rgba(234, 179, 8, 0.35);
 }
 
 .chat-bubble.thinking {
@@ -1313,6 +1347,16 @@ tr.vp-hover {
     margin: 4px 0 0;
     font-size: 12px;
     color: var(--text-dim);
+}
+
+.placement-error p .routing-hint-link {
+    color: var(--accent);
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.placement-error p .routing-hint-link:hover {
+    opacity: 0.8;
 }
 
 .stale-banner {

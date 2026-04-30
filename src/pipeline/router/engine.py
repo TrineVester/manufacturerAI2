@@ -15,6 +15,7 @@ import logging
 import math
 import random
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -123,6 +124,7 @@ def route_traces(
 
     # 6. Iterative improvement — GA-inspired loop with elite pool,
     #    local refinement, and blocker-aware exploration.
+    improve_deadline = time.monotonic() + config.max_routing_seconds
     best = solution.snapshot()
     best_score = solution.score()
     best_pads_map = dict(pads_map)
@@ -141,6 +143,9 @@ def route_traces(
 
     while True:
         if cancel and cancel.is_set():
+            break
+        if time.monotonic() > improve_deadline:
+            log.info("Router: wall-clock budget exhausted after %d iterations", iteration)
             break
         all_routed = best_score[0] == 0
         if iteration >= config.max_improve_iterations:
@@ -470,6 +475,53 @@ def _parse_net_refs(
 
 # ── Pad resolution ─────────────────────────────────────────────────
 
+def _snap_pad_to_free(grid: RoutingGrid, gx: int, gy: int) -> tuple[int, int]:
+    """If (gx, gy) is outside the routable inset, return the nearest FREE cell
+    that lies strictly inside the routing inset polygon.
+
+    This correctly handles side-mount component pins whose world coordinates
+    fall outside the outline (e.g. an IR LED mounted through the wall).  Such
+    pins get clamped to the grid boundary and then force-freed by
+    ``_block_components``, but those cells form an isolated island below the
+    edge-clearance zone — the A* pathfinder can never escape them.  Requiring
+    the snapped cell to be inside the inset polygon guarantees it is in the
+    connected routing interior.
+
+    Searches in expanding Chebyshev rings up to 20 cells out.  Falls back to
+    the original cell only if nothing is found (extremely congested grids).
+    """
+    from .grid import FREE
+    from shapely import contains_xy as _cxy
+    W = grid.width
+    H = grid.height
+    cells = grid._cells
+    inset = grid._inset_poly
+    ox, oy, res = grid.origin_x, grid.origin_y, grid.resolution
+
+    def _in_inset(cx: int, cy: int) -> bool:
+        wx = ox + (cx + 0.5) * res
+        wy = oy + (cy + 0.5) * res
+        return bool(_cxy(inset, wx, wy))
+
+    if cells[gy * W + gx] == FREE and _in_inset(gx, gy):
+        return (gx, gy)
+
+    for r in range(1, 21):
+        for dx in range(-r, r + 1):
+            for dy in (-r, r):
+                nx, ny = gx + dx, gy + dy
+                if 0 <= nx < W and 0 <= ny < H and cells[ny * W + nx] == FREE and _in_inset(nx, ny):
+                    return (nx, ny)
+        for dy in range(-r + 1, r):
+            for dx in (-r, r):
+                nx, ny = gx + dx, gy + dy
+                if 0 <= nx < W and 0 <= ny < H and cells[ny * W + nx] == FREE and _in_inset(nx, ny):
+                    return (nx, ny)
+
+    log.warning("_snap_pad_to_free: no inset-interior free cell within 20 cells of (%d, %d)", gx, gy)
+    return (gx, gy)
+
+
 def _resolve_all_pads(
     net_ids: list[str],
     net_pad_map: dict[str, list[_PinRef]],
@@ -513,6 +565,7 @@ def _resolve_pads(
                 log.warning("Net %s: cannot resolve pin %s", net_id, ref.raw)
                 return None
             gx, gy = grid.world_to_grid(pos[0], pos[1])
+            gx, gy = _snap_pad_to_free(grid, gx, gy)
             pads[i] = NetPad(
                 instance_id=ref.instance_id,
                 pin_id=ref.pin_or_group,
@@ -529,6 +582,7 @@ def _resolve_pads(
                 )
                 if pos is not None:
                     gx, gy = grid.world_to_grid(pos[0], pos[1])
+                    gx, gy = _snap_pad_to_free(grid, gx, gy)
                     pads[i] = NetPad(
                         instance_id=ref.instance_id,
                         pin_id=assigned_pin,
@@ -576,6 +630,7 @@ def _resolve_pads(
             return None
 
         gx, gy = grid.world_to_grid(pos[0], pos[1])
+        gx, gy = _snap_pad_to_free(grid, gx, gy)
         pads[i] = NetPad(
             instance_id=ref.instance_id,
             pin_id=chosen_pin,

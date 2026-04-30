@@ -662,7 +662,7 @@ class Solution:
                 if start_pad is not None:
                     sx, sy = start_pad.world_x, start_pad.world_y
                     gx0, gy0 = world_path[0]
-                    if (sx, sy) != (gx0, gy0):
+                    if (sx, sy) != (gx0, gy0) and outline.contains(Point(sx, sy)):
                         bend = _best_snap_bend(
                             sx, sy, gx0, gy0, foreign_pins,
                         )
@@ -676,7 +676,7 @@ class Solution:
                 if end_pad is not None:
                     ex, ey = end_pad.world_x, end_pad.world_y
                     gxn, gyn = world_path[-1]
-                    if (ex, ey) != (gxn, gyn):
+                    if (ex, ey) != (gxn, gyn) and outline.contains(Point(ex, ey)):
                         bend = _best_snap_bend(
                             ex, ey, gxn, gyn, foreign_pins,
                         )

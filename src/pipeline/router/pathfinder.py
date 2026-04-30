@@ -65,6 +65,7 @@ def _octile_h(dx: int, dy: int) -> float:
     return max(adx, ady) + _SQRT2_M1 * min(adx, ady)
 
 
+@lru_cache(maxsize=4)
 def _build_cost_table(turn_penalty: float) -> tuple:
     """Precompute move_cost + turn_cost for all (prev_direction, d) pairs.
 

@@ -22,7 +22,7 @@ from src.web.routes._deps import (
     get_catalog, load_session_or_404, invalidate_downstream,
     enrich_design, enrich_components, _read_outline, strip_enriched_fields,
 )
-from src.web.tasks import AgentTask, get_agent_task, set_agent_task
+from src.web.tasks import AgentTask, get_agent_task, set_agent_task, cancel_all_pipeline_tasks
 
 log = logging.getLogger(__name__)
 
@@ -333,7 +333,56 @@ async def patch_enclosure(sid: str, request: Request):
         if key in body:
             enc[key] = body[key]
 
+    # Enclosure shape changes invalidate SCAD and everything downstream;
+    # placement and routing are unaffected by edge profile changes.
+    s.invalidate_downstream("routing")
     s.write_artifact("design.json", data)
+    cat = get_catalog()
+    enrich_design(data, cat, session=s)
+    return data
+
+
+@router.patch("/sessions/{sid}/design/ui-placement/{instance_id}")
+async def move_ui_placement(sid: str, instance_id: str, request: Request):
+    """Move a UI placement to a new (x_mm, y_mm). Centre must stay inside the outline."""
+    body = await request.json()
+    try:
+        x_mm = float(body["x_mm"])
+        y_mm = float(body["y_mm"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(400, "x_mm and y_mm are required numbers")
+
+    s = load_session_or_404(sid)
+    data = s.read_artifact("design.json")
+    if data is None:
+        raise HTTPException(404, "No design yet")
+
+    entry = next(
+        (p for p in data.get("ui_placements", []) if p["instance_id"] == instance_id),
+        None,
+    )
+    if entry is None:
+        raise HTTPException(404, f"UI placement '{instance_id}' not found")
+
+    # Validate: centre point must be inside the outline
+    outline = _read_outline(s)
+    if len(outline) >= 3:
+        from shapely.geometry import Polygon, Point
+        poly = Polygon([(p["x"], p["y"]) for p in outline])
+        if not poly.contains(Point(x_mm, y_mm)):
+            raise HTTPException(400, "Position is outside the outline")
+
+    entry["x_mm"] = round(x_mm, 2)
+    entry["y_mm"] = round(y_mm, 2)
+
+    # Cancel any running pipeline tasks (placement, routing, scad, etc.)
+    cancel_all_pipeline_tasks(s.id)
+
+    # Pure position change — smart invalidation skips circuit, invalidates placement+
+    s.invalidate_design_smart(data)
+    s.write_artifact("design.json", data)
+    s.save()
+
     cat = get_catalog()
     enrich_design(data, cat, session=s)
     return data

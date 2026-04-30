@@ -19,6 +19,8 @@ import threading
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
+from shapely.geometry import Polygon, Point
+
 from src.catalog.models import CatalogResult
 from src.pipeline.placer.models import PlacedComponent, FullPlacement, VALID_ROTATIONS
 from src.pipeline.router import route_traces
@@ -89,6 +91,14 @@ def _routing_score(result: RoutingResult) -> tuple[int, int]:
     """Lower is better: (failed_nets, total_trace_cells)."""
     total_cells = sum(len(t.path) for t in result.traces)
     return (len(result.failed_nets), total_cells)
+
+
+def _all_pins_inside_outline(comp: PlacedComponent, outline_poly: Polygon) -> bool:
+    """Return True if all pin positions lie inside the outline polygon."""
+    for pos in comp.pin_positions.values():
+        if not outline_poly.contains(Point(pos[0], pos[1])):
+            return False
+    return True
 
 
 def _candidates_to_try(
@@ -172,6 +182,7 @@ def route_with_recovery(
         log.info("No blocking auto-placed components found; cannot recover.")
         return RouteResult(placement=placement, routing=result)
 
+    outline_poly = Polygon(placement.outline.vertices)
     best_score = _routing_score(result)
     best_placement = placement
     best_result = result
@@ -196,6 +207,12 @@ def route_with_recovery(
             )
 
             new_comp = _recompute_pin_positions(original_comp, cat_map, new_rot)
+            if not _all_pins_inside_outline(new_comp, outline_poly):
+                log.debug(
+                    "  %s @ %d°: skipped (pin(s) outside outline)",
+                    original_comp.instance_id, new_rot,
+                )
+                continue
             variant_components = list(placement.components)
             variant_components[comp_idx] = new_comp
             variant_placement = FullPlacement(
@@ -423,6 +440,7 @@ def place_and_route(
         log.info("No blocking auto-placed components found; cannot recover.")
         return PlaceAndRouteResult(placement=placement, routing=result)
 
+    outline_poly = Polygon(placement.outline.vertices)
     best_score = _routing_score(result)
     best_placement = placement
     best_result = result
@@ -448,6 +466,12 @@ def place_and_route(
 
             # Build a variant placement with only this component rotated
             new_comp = _recompute_pin_positions(original_comp, cat_map, new_rot)
+            if not _all_pins_inside_outline(new_comp, outline_poly):
+                log.debug(
+                    "  %s @ %d°: skipped (pin(s) outside outline)",
+                    original_comp.instance_id, new_rot,
+                )
+                continue
             variant_components = list(placement.components)
             variant_components[comp_idx] = new_comp
             variant_placement = FullPlacement(

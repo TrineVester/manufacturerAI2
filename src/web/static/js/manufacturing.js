@@ -3,6 +3,7 @@
 import { API, state } from './state.js';
 import { setData as setViewportData } from './viewport.js';
 import { refreshSession } from './session.js';
+import { markStepDone } from './pipelineProgress.js';
 
 let _pollTimer = null;
 
@@ -165,6 +166,7 @@ export async function runManufacturing() {
         // 5. Render results
         renderResult(manifest, bitmapData);
         stopTabFlash();
+        markStepDone('manufacturing');
         setViewportData('manufacturing', { manifest, bitmap: bitmapData });
         refreshSession();
         showStatus('');
@@ -246,6 +248,7 @@ export async function loadManufacturingResult() {
 
     renderResult(manifest, bitmapData);
     stopTabFlash();
+    markStepDone('manufacturing');
     setViewportData('manufacturing', { manifest, bitmap: bitmapData });
 }
 

@@ -112,6 +112,7 @@ class RoutingGrid:
 
         # Block cells outside polygon or too close to its edges
         inset_poly = outline_poly.buffer(-edge_clearance)
+        self._inset_poly = inset_poly  # kept for pad-snap connectivity checks
         W = self.width
         H = self.height
         ox, oy = self.origin_x, self.origin_y

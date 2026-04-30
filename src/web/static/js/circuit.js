@@ -5,6 +5,7 @@ import { setData as setViewportData } from './viewport.js';
 import { enablePlacementTab, resetPlacementPanel } from './placement.js';
 import { resetRoutingPanel } from './routing.js';
 import { getSelectedModel } from './theme.js';
+import { markStepDone } from './pipelineProgress.js';
 
 const messagesDiv = () => document.getElementById('circuit-chat-messages');
 const statusSpan  = () => document.getElementById('circuit-status');
@@ -39,6 +40,15 @@ function renderConversation(messages) {
         if (msg.role === 'user') {
             if (typeof msg.content === 'string') {
                 appendMessage('user', msg.content);
+            } else if (Array.isArray(msg.content)) {
+                // Extract user-visible text blocks, skipping injected context preambles
+                for (const block of msg.content) {
+                    if (block.type === 'text' && block.text &&
+                        !block.text.startsWith('<!-- design-context -->') &&
+                        !block.text.startsWith('<!-- circuit-context -->')) {
+                        appendMessage('user', block.text);
+                    }
+                }
             }
         } else if (msg.role === 'assistant') {
             renderAssistantBlocks(msg.content);
@@ -101,8 +111,16 @@ async function loadCircuitResult() {
         if (!res.ok) return;
         const design = await res.json();
         if (design && design.components) {
+            if (design._pending) {
+                appendDesignFeedbackBanner(design._pending_reason);
+            }
             appendCircuitResult(design);
             setViewportData('circuit', design);
+            // A result exists — stop flashing regardless of pending state
+            if (!design._pending) {
+                enableCircuitTab(false);
+                markStepDone('circuit');
+            }
         }
     } catch { /* no circuit yet */ }
 }
@@ -126,6 +144,7 @@ export function resetCircuitPanel() {
 // ── Send prompt ───────────────────────────────────────────────────
 
 export async function sendCircuitPrompt() {
+    if (!state.session) return;
     const input = document.getElementById('circuit-chat-input');
     const prompt = input.value.trim();
     if (_isSending) return;
@@ -273,10 +292,14 @@ async function consumeSSE(response) {
                     statusSpan().textContent = 'Thinking…';
                     break;
 
-                case 'design':
-                    appendCircuitResult(data.design);
-                    setViewportData('circuit', data.design);
+                case 'circuit':
+                    appendCircuitResult(data.circuit);
+                    setViewportData('circuit', data.circuit);
                     statusSpan().textContent = 'Circuit complete!';
+                    // Stop circuit tab flash now that it has a result
+                    enableCircuitTab(false);
+                    // Only count as done when the circuit is validated (not awaiting design feedback)
+                    if (!data.circuit?._pending) markStepDone('circuit');
                     // Enable placement step, invalidate downstream
                     enablePlacementTab(true);
                     resetPlacementPanel();
@@ -285,6 +308,10 @@ async function consumeSSE(response) {
                         const rBtn = document.querySelector('#pipeline-nav .step[data-step="routing"]');
                         if (rBtn) { rBtn.disabled = true; rBtn.classList.remove('tab-flash'); }
                     }
+                    break;
+
+                case 'design_feedback':
+                    appendDesignFeedbackBanner(data.message);
                     break;
 
                 case 'error':
@@ -305,6 +332,15 @@ function appendMessage(role, text) {
     const div = document.createElement('div');
     div.className = `chat-bubble ${role}`;
     div.textContent = text;
+    messagesDiv().appendChild(div);
+    scrollToBottom();
+}
+
+function appendDesignFeedbackBanner(message) {
+    const div = document.createElement('div');
+    div.className = 'chat-bubble warning';
+    div.innerHTML = '<strong>⚠ Circuit pending — enclosure needs adjustment:</strong><pre style="white-space:pre-wrap;margin:4px 0 0">'
+        + (message || '').replace(/</g, '&lt;') + '</pre>';
     messagesDiv().appendChild(div);
     scrollToBottom();
 }

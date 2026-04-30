@@ -25,7 +25,8 @@ from __future__ import annotations
 import math
 import logging
 
-from shapely.geometry import Polygon as ShapelyPolygon
+from shapely.geometry import Polygon as ShapelyPolygon, Point as ShapelyPoint
+from shapely.ops import nearest_points as shapely_nearest_points
 
 from src.pipeline.design.models import Outline, Enclosure
 from src.pipeline.design.height_field import (
@@ -133,11 +134,14 @@ def _safe_inset_polygon_pts(
     inset: float,
     _area: float | None = None,
 ) -> list[list[float]]:
-    """Miter-inset polygon with self-intersection guard.
+    """Inset polygon with self-intersection guard.
 
-    If the requested inset produces a self-intersecting polygon (common
-    for non-convex shapes with thin features), binary-searches for the
-    largest safe inset that keeps the ring valid.
+    First tries fast miter inset.  If that produces a self-intersecting
+    polygon (common for non-convex shapes with thin features), falls back to
+    Shapely buffer + nearest-point projection, which always gives the correct
+    perpendicular offset regardless of polygon complexity.  Each original
+    vertex is projected to the nearest point on the shrunk polygon boundary,
+    preserving the required N-vertex ring structure.
     """
     if inset < 1e-9:
         return [[x, y] for x, y in pts]
@@ -146,17 +150,19 @@ def _safe_inset_polygon_pts(
     if ShapelyPolygon(result).is_valid:
         return result
 
-    lo, hi = 0.0, inset
-    best: list[list[float]] = [[x, y] for x, y in pts]
-    for _ in range(8):
-        mid = (lo + hi) * 0.5
-        candidate = _inset_polygon_pts(pts, mid, _area=_area)
-        if ShapelyPolygon(candidate).is_valid:
-            best = candidate
-            lo = mid
-        else:
-            hi = mid
-    return best
+    # Miter inset self-intersects — use Shapely buffer for a geometrically
+    # correct offset, then project each original vertex back to N points.
+    shrunk = ShapelyPolygon(pts).buffer(-inset)
+    if not shrunk.is_empty and shrunk.is_valid:
+        boundary = shrunk.boundary
+        projected: list[list[float]] = []
+        for x, y in pts:
+            _, near = shapely_nearest_points(ShapelyPoint(x, y), boundary)
+            projected.append([near.x, near.y])
+        return projected
+
+    # Polygon collapses entirely at this inset — return original vertices.
+    return [[x, y] for x, y in pts]
 
 
 # ── Ear-clipping polygon triangulation ─────────────────────────────────────────

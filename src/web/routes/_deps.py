@@ -60,7 +60,9 @@ _catalog_mtime: float = 0.0
 def _catalog_dir_mtime() -> float:
     from src.catalog.loader import CATALOG_DIR
     try:
-        return max((p.stat().st_mtime for p in CATALOG_DIR.glob("*.json")), default=0.0)
+        dir_mtime = CATALOG_DIR.stat().st_mtime
+        file_mtimes = (p.stat().st_mtime for p in CATALOG_DIR.glob("*.json"))
+        return max(dir_mtime, *file_mtimes, 0.0)
     except OSError:
         return 0.0
 
@@ -146,6 +148,9 @@ def require_design(session: Session) -> dict:
 
 def require_circuit(session: Session) -> dict:
     data = session.read_artifact("circuit.json")
+    if data is None:
+        # Fall back to pending circuit (auto-fix loop still running)
+        data = session.read_artifact("circuit_pending.json")
     if data is None:
         raise HTTPException(400, "No circuit.json — run the circuit agent first")
     return data

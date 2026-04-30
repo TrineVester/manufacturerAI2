@@ -4,6 +4,7 @@ import { API, state } from './state.js';
 import { setData as setViewportData, setStale } from './viewport.js';
 import { enableScadTab } from './scad.js';
 import { refreshSession } from './session.js';
+import { markStepDone, markStepUndone } from './pipelineProgress.js';
 
 function addStaleBanner(el, msg) {
     if (!el) return;
@@ -120,6 +121,10 @@ export async function runRouting() {
             if (poll.message) showStatus(`Routing… ${poll.message}`);
         }
         const routingFailed = poll?.status === 'error';
+        if (!poll || poll.status === 'idle') {
+            showStatus('Router did not start — please try again', true);
+            return;
+        }
         if (routingFailed) {
             const msg = poll.message || poll.detail?.reason || 'Routing failed';
             showStatus(`Routing failed: ${msg}`, true);
@@ -139,6 +144,9 @@ export async function runRouting() {
         setViewportData('routing', data);
         stopTabFlash();
         if (!routingFailed) {
+            showStatus('Routing complete — check the SCAD tab next');
+            markStepDone('routing');
+            markStepUndone('scad', 'manufacturing');
             enableScadTab(true);
         }
         refreshSession();
@@ -176,6 +184,7 @@ export async function loadRoutingResult() {
         setViewportData('routing', data);
         stopTabFlash();
         if (!data.failed_nets || data.failed_nets.length === 0) {
+            markStepDone('routing');
             enableScadTab(true);
         }
     } catch {
@@ -269,6 +278,15 @@ function renderResult(data, rotationChanges = null) {
             return `<div style="margin:4px 0"><strong>${esc(n)}</strong> <span style="font-size:11px; opacity:0.85">${pins}</span></div>`;
         }).join('');
         warn.innerHTML = `<strong>Failed nets (${failedNets.length}):</strong>${failedRows}`;
+        const hint = document.createElement('p');
+        hint.innerHTML = `💡 Tip: routing often succeeds after repositioning buttons. `
+            + `<a href="#" class="routing-hint-link">Go to Design</a> and drag components to new positions, then re-run the router.`;
+        hint.querySelector('.routing-hint-link').addEventListener('click', async (e) => {
+            e.preventDefault();
+            const { switchStep } = await import('./main.js');
+            switchStep('design');
+        });
+        warn.appendChild(hint);
         el.appendChild(warn);
     }
 

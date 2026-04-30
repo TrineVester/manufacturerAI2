@@ -471,9 +471,9 @@ def sa_refine(
     # Weights
     W_HPWL = 1.0
     W_CONGESTION = 10.0
-    W_OVERLAP = 200.0
-    W_OUTLINE = 200.0
-    W_PIN_CLR = 100.0
+    W_OVERLAP = 1000.0
+    W_OUTLINE = 1000.0
+    W_PIN_CLR = 500.0
     W_EDGE_PREF = 1.0
     W_CROSSING = 50.0
 
@@ -586,7 +586,7 @@ def sa_refine(
             current_cost = new_cost
             accepted += 1
             stagnant = 0
-            if new_cost < best_cost:
+            if new_cost < best_cost and _overlap_penalty(all_ids, positions) <= 0.01:
                 best_cost = new_cost
                 best_snapshot = {
                     i: (positions[i].x, positions[i].y, positions[i].rotation)
