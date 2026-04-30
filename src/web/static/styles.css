@@ -165,28 +165,9 @@ button:disabled {
 #pipeline-steps {
     display: flex;
     gap: 2px;
-    position: relative;
-    padding-bottom: 3px; /* room for the bar */
 }
 
-#pipeline-progress {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: var(--border);
-    border-radius: 2px;
-    overflow: hidden;
-}
 
-#pipeline-progress-fill {
-    height: 100%;
-    width: 16.667%; /* 1 of 6 steps enabled at start */
-    background: #22c55e;
-    border-radius: 2px;
-    transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
-}
 
 #pipeline-nav .nav-spacer {
     flex: 1;
