@@ -10,6 +10,8 @@ import { clearData as clearViewportData, setStep } from './viewport.js';
 import { enableGuideBtn, closeGuide } from './guide.js';
 import { resetRoutingPanel, loadRoutingResult } from './routing.js';
 import { resetScadPanel, loadScadResult } from './scad.js';
+import { loadManufacturingResult } from './manufacturing.js';
+import { loadFirmwareResult } from './firmware.js';
 
 /**
  * Fetch current session metadata from the server and update local version.
@@ -175,8 +177,10 @@ export async function showSessionsModal() {
                 }
                 if (hasDesign) {
                     loadPlacementResult();
-                    loadRoutingResult();   // restore routing viewport data
-                    loadScadResult();      // restore SCAD + STL status (may resume compile)
+                    loadRoutingResult();      // restore routing viewport data
+                    loadScadResult();         // restore SCAD + STL status (may resume compile)
+                    loadManufacturingResult(); // restore manufacturing result
+                    loadFirmwareResult();      // restore firmware result
                 }
             });
         });

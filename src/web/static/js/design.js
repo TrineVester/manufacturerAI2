@@ -188,17 +188,51 @@ export async function sendDesignPrompt() {
             onSessionCreated(postData.session_id);
         }
 
-        // 2. Open SSE stream to consume events
-        let streamUrl = `${API}/api/session/design/stream`;
-        if (state.session) {
-            streamUrl += `?session=${encodeURIComponent(state.session)}`;
+        // 2. Open SSE stream — with reconnect on unexpected closure
+        const streamBase = `${API}/api/session/design/stream`
+            + (state.session ? `?session=${encodeURIComponent(state.session)}` : '');
+
+        let cursor = 0;
+        const MAX_RECONNECTS = 5;
+        for (let attempt = 0; attempt <= MAX_RECONNECTS; attempt++) {
+            const url = cursor > 0 ? `${streamBase}&after=${cursor}` : streamBase;
+            let sseRes;
+            try {
+                sseRes = await fetch(url);
+            } catch (fetchErr) {
+                appendMessage('error', `Connection error: ${fetchErr.message}`);
+                break;
+            }
+            if (!sseRes.ok) {
+                appendMessage('error', `Failed to open event stream (${sseRes.status})`);
+                break;
+            }
+            const result = await consumeSSE(sseRes, cursor);
+            cursor = result.cursor;
+            if (result.gotResultEvent) break;
+
+            // Stream closed without delivering the design event — check server status
+            if (!state.session) break;
+            try {
+                const stRes = await fetch(
+                    `${API}/api/session/design/status?session=${encodeURIComponent(state.session)}`
+                );
+                if (!stRes.ok) break;
+                const stData = await stRes.json();
+                if (stData.status !== 'running') {
+                    // Task finished while we were disconnected — recover from disk
+                    loadDesignResult();
+                    break;
+                }
+                if (attempt < MAX_RECONNECTS) {
+                    // Task still running — reconnect after brief delay
+                    statusSpan().textContent = 'Reconnecting…';
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+            } catch {
+                break;
+            }
         }
-        const sseRes = await fetch(streamUrl);
-        if (!sseRes.ok) {
-            appendMessage('error', `Failed to open event stream`);
-            return;
-        }
-        await consumeSSE(sseRes);
     } catch (e) {
         appendMessage('error', `Connection error: ${e.message}`);
     } finally {
@@ -215,8 +249,12 @@ export async function sendDesignPrompt() {
  * Parse an SSE stream from a fetch Response.
  * We use fetch + ReadableStream instead of EventSource because
  * EventSource only supports GET requests.
+ *
+ * @param {Response} response
+ * @param {number} initialCursor  - number of events already processed before this call
+ * @returns {{ cursor: number, gotResultEvent: boolean }}
  */
-async function consumeSSE(response) {
+async function consumeSSE(response, initialCursor = 0) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -228,6 +266,9 @@ async function consumeSSE(response) {
     let currentBlock = null;  // 'thinking' | 'message' | null
     let toolGroup = null;     // current tool group <details> element
     let toolGroupItems = null; // container for tool items inside the group
+
+    let cursor = initialCursor;
+    let gotResultEvent = false;
 
     while (true) {
         const { done, value } = await reader.read();
@@ -259,6 +300,8 @@ async function consumeSSE(response) {
             if (dataStr) {
                 try { data = JSON.parse(dataStr); } catch { data = {}; }
             }
+
+            cursor++;
 
             // ── Handle each event type ──
 
@@ -328,6 +371,7 @@ async function consumeSSE(response) {
                     break;
 
                 case 'design':
+                    gotResultEvent = true;
                     appendDesignResult(data.design);
                     setViewportData('design', data.design);
                     statusSpan().textContent = 'Design complete!';
@@ -367,7 +411,7 @@ async function consumeSSE(response) {
                     updateTokenMeter(data.input_tokens, data.budget);
                     break;
 
-                case 'done': {
+                case 'done':
                     // Refresh token count from server after turn completes
                     // (includes any tool_result messages appended after last count)
                     if (state.session) {
@@ -377,14 +421,11 @@ async function consumeSSE(response) {
                             .catch(() => {});
                     }
                     break;
-                }
-
-                case 'done':
-                    statusSpan().textContent = 'Done';
-                    break;
             }
         }
     }
+
+    return { cursor, gotResultEvent };
 }
 
 // ── Render helpers ────────────────────────────────────────────────

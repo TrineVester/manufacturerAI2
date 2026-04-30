@@ -104,14 +104,47 @@ export async function sendFirmwarePrompt(prompt) {
             return;
         }
 
-        const sseRes = await fetch(
-            `${API}/api/session/firmware/agent/stream?session=${encodeURIComponent(state.session)}`,
-        );
-        if (!sseRes.ok) {
-            _appendMessage('error', 'Failed to open event stream');
-            return;
+        // Open SSE stream — with reconnect on unexpected closure
+        const streamBase = `${API}/api/session/firmware/agent/stream?session=${encodeURIComponent(state.session)}`;
+        let cursor = 0;
+        const MAX_RECONNECTS = 5;
+        for (let attempt = 0; attempt <= MAX_RECONNECTS; attempt++) {
+            const url = cursor > 0 ? `${streamBase}&after=${cursor}` : streamBase;
+            let sseRes;
+            try {
+                sseRes = await fetch(url);
+            } catch (fetchErr) {
+                _appendMessage('error', `Connection error: ${fetchErr.message}`);
+                break;
+            }
+            if (!sseRes.ok) {
+                _appendMessage('error', `Failed to open event stream (${sseRes.status})`);
+                break;
+            }
+            const result = await _consumeSSE(sseRes, cursor);
+            cursor = result.cursor;
+            if (result.gotResultEvent) break;
+
+            // Stream closed without firmware event — check server status
+            if (!state.session) break;
+            try {
+                const stRes = await fetch(
+                    `${API}/api/session/firmware/agent/status?session=${encodeURIComponent(state.session)}`
+                );
+                if (!stRes.ok) break;
+                const stData = await stRes.json();
+                if (stData.status !== 'running') {
+                    loadFirmwareResult();
+                    break;
+                }
+                if (attempt < MAX_RECONNECTS) {
+                    if (agentSt) agentSt.textContent = 'Reconnecting…';
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+            } catch {
+                break;
+            }
         }
-        await _consumeSSE(sseRes);
     } catch (e) {
         _appendMessage('error', `Connection error: ${e.message}`);
     } finally {
@@ -125,7 +158,12 @@ export async function sendFirmwarePrompt(prompt) {
 
 // ── SSE event consumer ────────────────────────────────────────────
 
-async function _consumeSSE(response) {
+/**
+ * @param {Response} response
+ * @param {number} initialCursor
+ * @returns {{ cursor: number, gotResultEvent: boolean }}
+ */
+async function _consumeSSE(response, initialCursor = 0) {
     const agentSt = document.getElementById('firmware-agent-status');
     const reader  = response.body.getReader();
     const decoder = new TextDecoder();
@@ -137,6 +175,9 @@ async function _consumeSSE(response) {
     let currentBlock    = null;
     let toolGroup       = null;
     let toolGroupItems  = null;
+
+    let cursor = initialCursor;
+    let gotResultEvent = false;
 
     while (true) {
         const { done, value } = await reader.read();
@@ -159,6 +200,8 @@ async function _consumeSSE(response) {
 
             let data = {};
             try { data = dataStr ? JSON.parse(dataStr) : {}; } catch { data = {}; }
+
+            cursor++;
 
             switch (eventType) {
                 case 'thinking_start':
@@ -219,6 +262,7 @@ async function _consumeSSE(response) {
                     break;
 
                 case 'firmware':
+                    gotResultEvent = true;
                     // Agent submitted a sketch — update preview
                     if (data.sketch) {
                         _renderSketchPreview(data.sketch);
@@ -239,6 +283,8 @@ async function _consumeSSE(response) {
             }
         }
     }
+
+    return { cursor, gotResultEvent };
 }
 
 // ── Render saved conversation history ────────────────────────────

@@ -171,14 +171,48 @@ export async function sendCircuitPrompt() {
             return;
         }
 
-        // Open SSE stream to consume events
-        const streamUrl = `${API}/api/session/circuit/stream?session=${encodeURIComponent(state.session)}`;
-        const sseRes = await fetch(streamUrl);
-        if (!sseRes.ok) {
-            appendMessage('error', `Failed to open event stream`);
-            return;
+        // Open SSE stream — with reconnect on unexpected closure
+        const streamBase = `${API}/api/session/circuit/stream?session=${encodeURIComponent(state.session)}`;
+        let cursor = 0;
+        const MAX_RECONNECTS = 5;
+        for (let attempt = 0; attempt <= MAX_RECONNECTS; attempt++) {
+            const url = cursor > 0 ? `${streamBase}&after=${cursor}` : streamBase;
+            let sseRes;
+            try {
+                sseRes = await fetch(url);
+            } catch (fetchErr) {
+                appendMessage('error', `Connection error: ${fetchErr.message}`);
+                break;
+            }
+            if (!sseRes.ok) {
+                appendMessage('error', `Failed to open event stream (${sseRes.status})`);
+                break;
+            }
+            const result = await consumeSSE(sseRes, cursor);
+            cursor = result.cursor;
+            if (result.gotResultEvent) break;
+
+            // Stream closed without delivering the circuit event — check server status
+            if (!state.session) break;
+            try {
+                const stRes = await fetch(
+                    `${API}/api/session/circuit/status?session=${encodeURIComponent(state.session)}`
+                );
+                if (!stRes.ok) break;
+                const stData = await stRes.json();
+                if (stData.status !== 'running') {
+                    // Task finished while we were disconnected — recover from disk
+                    loadCircuitResult();
+                    break;
+                }
+                if (attempt < MAX_RECONNECTS) {
+                    statusSpan().textContent = 'Reconnecting…';
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+            } catch {
+                break;
+            }
         }
-        await consumeSSE(sseRes);
     } catch (e) {
         appendMessage('error', `Connection error: ${e.message}`);
     } finally {
@@ -191,7 +225,12 @@ export async function sendCircuitPrompt() {
 
 // ── SSE parser ────────────────────────────────────────────────────
 
-async function consumeSSE(response) {
+/**
+ * @param {Response} response
+ * @param {number} initialCursor  - number of events already processed before this call
+ * @returns {{ cursor: number, gotResultEvent: boolean }}
+ */
+async function consumeSSE(response, initialCursor = 0) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -202,6 +241,9 @@ async function consumeSSE(response) {
     let currentBlock = null;
     let toolGroup = null;
     let toolGroupItems = null;
+
+    let cursor = initialCursor;
+    let gotResultEvent = false;
 
     while (true) {
         const { done, value } = await reader.read();
@@ -231,6 +273,8 @@ async function consumeSSE(response) {
             if (dataStr) {
                 try { data = JSON.parse(dataStr); } catch { data = {}; }
             }
+
+            cursor++;
 
             switch (eventType) {
                 case 'thinking_start':
@@ -293,6 +337,7 @@ async function consumeSSE(response) {
                     break;
 
                 case 'circuit':
+                    gotResultEvent = true;
                     appendCircuitResult(data.circuit);
                     setViewportData('circuit', data.circuit);
                     statusSpan().textContent = 'Circuit complete!';
@@ -324,6 +369,8 @@ async function consumeSSE(response) {
             }
         }
     }
+
+    return { cursor, gotResultEvent };
 }
 
 // ── Render helpers ────────────────────────────────────────────────

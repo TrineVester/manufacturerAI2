@@ -209,4 +209,8 @@ export function switchStep(step) {
     if (step === 'design') loadConversation();
     if (step === 'circuit') loadCircuitConversation();
     if (step === 'placement') loadPlacementResult();
+    if (step === 'routing') loadRoutingResult();
+    if (step === 'scad') loadScadResult();
+    if (step === 'manufacturing') loadManufacturingResult();
+    if (step === 'firmware') loadFirmwareResult();
 }

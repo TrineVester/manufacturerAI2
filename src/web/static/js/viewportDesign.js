@@ -20,6 +20,8 @@ import { drawComponentIcon } from './componentRenderer.js';
 import { normaliseOutline, buildOutlinePath, snapToEdge, esc, SCALE, PAD, NS, attachViewToggle } from './viewportUtils.js';
 import { state, API } from './state.js';
 import { markStepUndone } from './pipelineProgress.js';
+import { resetPlacementPanel, enablePlacementTab } from './placement.js';
+import { resetRoutingPanel } from './routing.js';
 
 // ── Toggle controller ───────────────────────────────────────────
 
@@ -170,18 +172,19 @@ function _attachDrag(g, up, svg, ox, oy, verts) {
                 clearData('routing');
                 clearData('scad');
                 clearData('manufacturing');
-                // Disable the downstream nav tabs so the progress bar shrinks back.
-                for (const s of ['placement', 'routing', 'scad', 'manufacturing']) {
+                // Disable routing, SCAD and manufacturing — they depend on placement.
+                // Do NOT disable placement itself; it still needs to be re-run.
+                for (const s of ['routing', 'scad', 'manufacturing']) {
                     const b = document.querySelector(`#pipeline-nav .step[data-step="${s}"]`);
                     if (b) { b.disabled = true; b.classList.remove('tab-flash'); }
                 }
                 markStepUndone('placement', 'routing', 'scad', 'manufacturing');
-                // Also reset the placement and routing info panels (left-side result panels)
-                // so they return to the "run" hero state instead of showing stale results.
-                const { resetPlacementPanel } = await import('./placement.js');
-                const { resetRoutingPanel } = await import('./routing.js');
+                // Reset info panels to hero state and re-enable placement tab.
+                // All calls are now synchronous (static imports) so there is no
+                // async gap where the button could appear stuck as disabled.
                 resetPlacementPanel();
                 resetRoutingPanel();
+                enablePlacementTab(true);
             } else {
                 g.setAttribute('transform', '');
             }

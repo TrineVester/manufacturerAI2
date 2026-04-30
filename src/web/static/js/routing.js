@@ -185,7 +185,10 @@ export async function loadRoutingResult() {
         stopTabFlash();
         if (!data.failed_nets || data.failed_nets.length === 0) {
             markStepDone('routing');
-            enableScadTab(true);
+            // Only flash SCAD if it hasn't been completed yet
+            const scadBtn = document.querySelector('#pipeline-nav .step[data-step="scad"]');
+            const scadDone = scadBtn?.classList.contains('step-done') ?? false;
+            enableScadTab(!scadDone);
         }
     } catch {
         // No routing available yet — that's fine

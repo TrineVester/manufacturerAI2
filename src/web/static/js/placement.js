@@ -176,7 +176,10 @@ export async function loadPlacementResult() {
         stopTabFlash();
         enableGuideBtn(true);
         markStepDone('placement');
-        enableRoutingTab(true);
+        // Only flash routing if it hasn't been completed yet (avoids re-flashing on tab switch)
+        const routingBtn = document.querySelector('#pipeline-nav .step[data-step="routing"]');
+        const routingDone = routingBtn?.classList.contains('step-done') ?? false;
+        enableRoutingTab(!routingDone);
     } catch {
         // No placement available yet — that's fine
     }

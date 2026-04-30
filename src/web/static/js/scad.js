@@ -142,7 +142,10 @@ export async function loadScadResult() {
         renderResult(data);
         stopTabFlash();
         markStepDone('scad');
-        enableManufacturingTab(true);
+        // Only flash manufacturing if it hasn't been completed yet
+        const mfgBtn = document.querySelector('#pipeline-nav .step[data-step="manufacturing"]');
+        const mfgDone = mfgBtn?.classList.contains('step-done') ?? false;
+        enableManufacturingTab(!mfgDone);
         // Also check STL status
         pollOrRestoreStl(data);
     } catch {
