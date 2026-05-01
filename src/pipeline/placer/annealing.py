@@ -10,8 +10,11 @@ Cost function (evaluated over the *entire* placement):
      trace length.  Sum over all nets of (bbox width + bbox height).
   2. Congestion — coarse global-routing demand vs. capacity (expensive,
      computed periodically rather than every iteration).
-  3. Overlap penalty — body/keepout overlap between any pair.
-  4. Outline violation — any body corner outside the outline.
+  3. Routing feasibility — actual A* routing on a 1 mm grid for
+     high-fanout nets (≥3 instances), matching the real router's
+     blocking rules.  Checked every FEAS_INTERVAL iterations.
+  4. Overlap penalty — body/keepout overlap between any pair.
+  5. Outline violation — any body corner outside the outline.
 
 Perturbation moves:
   - Displace  (60 %) — shift one component by a random offset.
@@ -200,6 +203,179 @@ def _preparse_net_pins(
         result.append(entries)
     return result
 
+
+# ── Routing-feasibility constants ─────────────────────────────────
+
+FEAS_RESOLUTION_MM = 1.0
+"""Grid resolution (mm) for the SA routing-feasibility check.
+
+Coarser than the real router (0.5 mm) for speed; fine enough to detect
+corridor blockages from battery-holder-sized bodies (~23×48 mm).
+At 1 mm, a 120×70 mm board has ~8 400 cells vs ~33 600 at 0.5 mm."""
+
+FEAS_INTERVAL = 50
+"""Refresh the routing-feasibility cost every this many SA iterations.
+
+The check runs A* on the real grid for all high-fanout nets; it is
+more expensive than the coarse BFS congestion term (updated every 50
+iterations) but far cheaper than running it every iteration."""
+
+MIN_CORRIDOR_MM = 8.0
+"""Minimum routing corridor width (mm) that must exist on at least one
+side in each axis around every routing-blocking component body.
+
+Choose a value wide enough for at least 2–3 traces with clearance.
+At the real router's 0.5 mm resolution and typical 0.4 mm trace +
+0.3 mm clearance, 8 mm comfortably fits several parallel traces."""
+
+
+def _routing_feasibility_cost(
+    nets: list[Net],
+    positions: dict[str, Placed],
+    catalog_map: dict[str, Component],
+    feas_grid: object,
+) -> float:
+    """Check whether high-fanout nets are physically routable given the
+    current placement, using the same A* pathfinder as the real router.
+
+    Only nets whose pin list spans three or more distinct component
+    instances are checked — in practice these are the power rails (GND,
+    VCC) that account for every routing failure observed in testing.
+
+    Component bodies flagged ``blocks_routing=True`` in the catalog are
+    temporarily blocked on the feasibility grid; pin cells are
+    force-freed so A* can reach them even when they sit on a body edge.
+
+    Returns
+    -------
+    float
+        ``100.0 * count_of_unroutable_nets``.  Zero when all critical
+        nets can be connected.
+    """
+    from src.pipeline.router.grid import FREE, BLOCKED
+    from src.pipeline.router.pathfinder import find_path
+
+    W = feas_grid.width
+    cells = feas_grid._cells
+
+    # ── Collect high-fanout nets with their per-instance pin cells ──
+    critical: list[tuple[Net, list[tuple[int, int]]]] = []
+    for net in nets:
+        inst_pins: dict[str, tuple[int, int]] = {}
+        for ref in net.pins:
+            if ":" not in ref:
+                continue
+            iid, pid = ref.split(":", 1)
+            if iid not in positions or iid in inst_pins:
+                continue
+            p = positions[iid]
+            cat = catalog_map.get(p.catalog_id)
+            if cat is None:
+                wx, wy = p.x, p.y
+            else:
+                pin_obj = next(
+                    (pin for pin in cat.pins if pin.id == pid), None
+                )
+                if pin_obj is None:
+                    wx, wy = p.x, p.y
+                else:
+                    c, s = _cos_sin(p.rotation)
+                    loc = pin_obj.position_mm
+                    wx = p.x + loc[0] * c - loc[1] * s
+                    wy = p.y + loc[0] * s + loc[1] * c
+            inst_pins[iid] = feas_grid.world_to_grid(wx, wy)
+        if len(inst_pins) >= 3:
+            critical.append((net, list(inst_pins.values())))
+
+    if not critical:
+        return 0.0
+
+    # ── Temporarily block routing-blocking component bodies ─────────
+    body_blocked: list[int] = []
+    res = feas_grid.resolution
+    ox, oy = feas_grid.origin_x, feas_grid.origin_y
+    for iid, p in positions.items():
+        cat = catalog_map.get(p.catalog_id)
+        if cat is None or not cat.mounting.blocks_routing:
+            continue
+        gx_min = max(0, int(math.floor((p.x - p.hw - ox) / res)))
+        gx_max = min(feas_grid.width - 1, int(math.ceil((p.x + p.hw - ox) / res)))
+        gy_min = max(0, int(math.floor((p.y - p.hh - oy) / res)))
+        gy_max = min(feas_grid.height - 1, int(math.ceil((p.y + p.hh - oy) / res)))
+        for gy in range(gy_min, gy_max + 1):
+            for gx in range(gx_min, gx_max + 1):
+                flat = gy * W + gx
+                if cells[flat] == FREE:
+                    cells[flat] = BLOCKED
+                    body_blocked.append(flat)
+
+    # ── Check A* connectivity for each critical net ─────────────────
+    failed = 0
+    for _net, pin_cells in critical:
+        # Force-free pin cells that fell inside a blocked body
+        force_freed: list[tuple[int, int]] = []  # (flat, old_state)
+        for gx, gy in pin_cells:
+            flat = gy * W + gx
+            if cells[flat] != FREE:
+                force_freed.append((flat, cells[flat]))
+                cells[flat] = FREE
+
+        # Can every pin reach the first?
+        source = pin_cells[0]
+        net_failed = False
+        for target in pin_cells[1:]:
+            if find_path(feas_grid, source, target) is None:
+                net_failed = True
+                break
+        if net_failed:
+            failed += 1
+
+        for flat, old_state in force_freed:
+            cells[flat] = old_state
+
+    # ── Restore body blocks ─────────────────────────────────────────
+    for flat in body_blocked:
+        cells[flat] = FREE
+
+    return 100.0 * failed
+
+def _routing_corridor_penalty(
+    positions: dict[str, Placed],
+    catalog_map: dict[str, Component],
+    board_bbox: tuple[float, float, float, float],
+) -> float:
+    """Fast per-iteration penalty for routing-blocking components that are
+    placed such that they leave no adequate routing corridor.
+
+    For each ``blocks_routing=True`` component, the free board space on
+    each side of its keepout envelope is measured.  On both the x-axis
+    and the y-axis, at least one side must have at least
+    ``MIN_CORRIDOR_MM`` of clear space.  Each mm below that threshold
+    contributes linearly to the returned penalty.
+
+    This runs every SA iteration (O(n_blocking_components)), so it
+    guides the annealing away from placements where the battery holder
+    would cut off routing before the more expensive A* feasibility check
+    (``_routing_feasibility_cost``) fires.
+    """
+    oxmin, oymin, oxmax, oymax = board_bbox
+    total = 0.0
+    for iid, p in positions.items():
+        cat = catalog_map.get(p.catalog_id)
+        if cat is None or not cat.mounting.blocks_routing:
+            continue
+        body_hw = p.hw + p.keepout
+        body_hh = p.hh + p.keepout
+        left   = p.x - body_hw - oxmin
+        right  = oxmax - (p.x + body_hw)
+        bottom = p.y - body_hh - oymin
+        top    = oymax - (p.y + body_hh)
+        # On each axis at least one corridor must be ≥ MIN_CORRIDOR_MM
+        x_best = max(left, right)
+        y_best = max(bottom, top)
+        total += max(0.0, MIN_CORRIDOR_MM - x_best)
+        total += max(0.0, MIN_CORRIDOR_MM - y_best)
+    return total
 
 # ── Cost helpers ───────────────────────────────────────────────────
 
@@ -448,6 +624,10 @@ def sa_refine(
     from .geometry import _is_aabb
     outline_verts = list(outline_poly.exterior.coords[:-1])
     _outline_aabb = _is_aabb(outline_verts)
+    # Bounding box of the outline — used for corridor penalty on any board shape
+    _vx = [v[0] for v in outline_verts]
+    _vy = [v[1] for v in outline_verts]
+    _board_bbox: tuple[float, float, float, float] = (min(_vx), min(_vy), max(_vx), max(_vy))
 
     # Build pin local-position cache for fast HPWL
     pin_cache: dict[str, dict[str, tuple[float, float]]] = {}
@@ -471,6 +651,8 @@ def sa_refine(
     # Weights
     W_HPWL = 1.0
     W_CONGESTION = 10.0
+    W_FEAS = 200.0
+    W_CORRIDOR = 400.0
     W_OVERLAP = 1000.0
     W_OUTLINE = 1000.0
     W_PIN_CLR = 500.0
@@ -505,10 +687,24 @@ def sa_refine(
     CONG_INTERVAL = 50
     cached_cong = _congestion_cost(nets, positions, congestion_grid)
 
+    # Routing feasibility — real A* on 1 mm grid for high-fanout nets
+    _feas_grid = None
+    try:
+        from src.pipeline.router.grid import RoutingGrid as _RoutingGrid
+        _feas_grid = _RoutingGrid(outline_poly, resolution=FEAS_RESOLUTION_MM)
+    except Exception:
+        log.debug("Routing feasibility grid unavailable; skipping feasibility cost")
+    cached_feas = (
+        _routing_feasibility_cost(nets, positions, catalog_map, _feas_grid)
+        if _feas_grid is not None else 0.0
+    )
+
     def fast_cost() -> float:
         return (
             W_HPWL * _hpwl(net_pin_data, positions)
             + W_CONGESTION * cached_cong
+            + W_FEAS * cached_feas
+            + W_CORRIDOR * _routing_corridor_penalty(positions, catalog_map, _board_bbox)
             + W_OVERLAP * _overlap_penalty(all_ids, positions)
             + W_OUTLINE * _outline_penalty_fast(movable, positions, prep_poly, edge_clearance, outline_aabb=_outline_aabb)
             + W_PIN_CLR * _pin_clearance_penalty(all_ids, positions, catalog_map)
@@ -535,6 +731,8 @@ def sa_refine(
         # Refresh expensive cost terms periodically
         if iteration % CONG_INTERVAL == 0 and iteration > 0:
             cached_cong = _congestion_cost(nets, positions, congestion_grid)
+        if iteration % FEAS_INTERVAL == 0 and iteration > 0 and _feas_grid is not None:
+            cached_feas = _routing_feasibility_cost(nets, positions, catalog_map, _feas_grid)
 
         # Early termination if stagnant
         if stagnant >= STAGNANT_LIMIT:

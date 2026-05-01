@@ -138,6 +138,8 @@ export async function runPlacement() {
         // Mark routing as stale (invalidated by new placement)
         markRoutingStale();
         enableRoutingTab(true);
+        // Auto-navigate to the routing tab
+        import('./main.js').then(m => m.switchStep('routing'));
         refreshSession();
     } catch (e) {
         if (rerun) {

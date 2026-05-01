@@ -105,7 +105,14 @@ def route_traces(
     pads_map, pin_assignments = _resolve_all_pads(
         net_ids, net_pad_map, placement, catalog, grid, pin_pools,
     )
-    ordering = _priority_order(net_ids, net_pad_map, pads_map)
+    # Identify component instances whose bodies block routing (e.g. battery holder)
+    _blocking_instances: set[str] = {
+        pc.instance_id
+        for pc in placement.components
+        if catalog_map.get(pc.catalog_id) is not None
+        and catalog_map[pc.catalog_id].mounting.blocks_routing
+    }
+    ordering = _priority_order(net_ids, net_pad_map, pads_map, _blocking_instances)
 
     # 5. Build solution and route initial pass
     solution = Solution(
@@ -717,6 +724,7 @@ def _priority_order(
     net_ids: list[str],
     net_pad_map: dict[str, list[_PinRef]],
     pads_map: dict[str, list[NetPad]],
+    blocking_instances: set[str] | None = None,
 ) -> list[str]:
     hpwl: dict[str, int] = {}
     for nid in net_ids:
@@ -728,12 +736,24 @@ def _priority_order(
         ys = [p.gy for p in pads]
         hpwl[nid] = (max(xs) - min(xs)) + (max(ys) - min(ys))
 
-    def net_priority(nid: str) -> tuple[int, int]:
+    # Nets that touch a routing-blocking body (e.g. battery holder) are
+    # genuinely corridor-constrained regardless of fanout.  Route them
+    # first so they claim the limited paths around the body before signal
+    # traces fill the space.  All other nets follow, most-constrained first.
+    blocking_nets: set[str] = set()
+    if blocking_instances:
+        for nid in net_ids:
+            pads = pads_map.get(nid) or []
+            if any(p.instance_id in blocking_instances for p in pads):
+                blocking_nets.add(nid)
+
+    def net_priority(nid: str) -> tuple[int, int, int]:
+        tier = 0 if nid in blocking_nets else 1
         pin_count = len(net_pad_map.get(nid, []))
-        return (-pin_count, -hpwl.get(nid, 0))
+        return (tier, pin_count, hpwl.get(nid, 0))
 
     ordered = sorted(net_ids, key=net_priority)
-    log.debug("Initial ordering (HPWL): %s",
+    log.debug("Initial ordering (most-constrained-first): %s",
              ", ".join(f"{nid}({len(net_pad_map[nid])}p/{hpwl[nid]}hpwl)"
                        for nid in ordered))
     return ordered

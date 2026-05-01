@@ -178,7 +178,10 @@ def find_path(
             if d >= 4:
                 c1 = key + _DIAG_CORNER_H[d]
                 c2 = key + dcv[d]
-                if cells[c1] == TRACE_PATH and cells[c2] == TRACE_PATH:
+                cv1, cv2 = cells[c1], cells[c2]
+                if cv1 == PERMANENTLY_BLOCKED or cv2 == PERMANENTLY_BLOCKED:
+                    continue
+                if cv1 == TRACE_PATH and cv2 == TRACE_PATH:
                     continue
 
             nval = cells[nkey]
