@@ -23,6 +23,7 @@ from shapely.geometry import Polygon, Point
 
 from src.catalog.models import CatalogResult
 from src.pipeline.placer.models import PlacedComponent, FullPlacement, VALID_ROTATIONS
+from src.pipeline.placer.geometry import footprint_envelope_halfdims, aabb_gap
 from src.pipeline.router import route_traces
 from src.pipeline.router.models import RoutingResult, RouterConfig
 
@@ -98,6 +99,40 @@ def _all_pins_inside_outline(comp: PlacedComponent, outline_poly: Polygon) -> bo
     for pos in comp.pin_positions.values():
         if not outline_poly.contains(Point(pos[0], pos[1])):
             return False
+
+
+def _rotated_body_overlaps(
+    new_comp: PlacedComponent,
+    all_components: list[PlacedComponent],
+    cat_map: dict,
+) -> bool:
+    """Return True if the rotated body of *new_comp* overlaps any other component.
+
+    Uses the pin-inclusive envelope half-dims and keepout margins, matching
+    the same geometry the placer enforces during initial placement.
+    """
+    cat = cat_map.get(new_comp.catalog_id)
+    if cat is None:
+        return False
+    ehw, ehh = footprint_envelope_halfdims(cat, new_comp.rotation_deg)
+    keepout = cat.mounting.keepout_margin_mm
+
+    for other in all_components:
+        if other.instance_id == new_comp.instance_id:
+            continue
+        other_cat = cat_map.get(other.catalog_id)
+        if other_cat is None:
+            continue
+        o_ehw, o_ehh = footprint_envelope_halfdims(other_cat, other.rotation_deg)
+        o_keepout = other_cat.mounting.keepout_margin_mm
+        required_gap = max(keepout, o_keepout, 1.0)
+        gap = aabb_gap(
+            new_comp.x_mm, new_comp.y_mm, ehw, ehh,
+            other.x_mm, other.y_mm, o_ehw, o_ehh,
+        )
+        if gap < required_gap:
+            return True
+    return False
     return True
 
 
@@ -210,6 +245,12 @@ def route_with_recovery(
             if not _all_pins_inside_outline(new_comp, outline_poly):
                 log.debug(
                     "  %s @ %d°: skipped (pin(s) outside outline)",
+                    original_comp.instance_id, new_rot,
+                )
+                continue
+            if _rotated_body_overlaps(new_comp, placement.components, cat_map):
+                log.debug(
+                    "  %s @ %d°: skipped (body overlaps another component)",
                     original_comp.instance_id, new_rot,
                 )
                 continue
@@ -469,6 +510,12 @@ def place_and_route(
             if not _all_pins_inside_outline(new_comp, outline_poly):
                 log.debug(
                     "  %s @ %d°: skipped (pin(s) outside outline)",
+                    original_comp.instance_id, new_rot,
+                )
+                continue
+            if _rotated_body_overlaps(new_comp, placement.components, cat_map):
+                log.debug(
+                    "  %s @ %d°: skipped (body overlaps another component)",
                     original_comp.instance_id, new_rot,
                 )
                 continue
