@@ -380,7 +380,7 @@ async function consumeSSE(response, initialCursor = 0) {
                     // Enable circuit step now that design exists
                     enableCircuitTab(true);
                     // Also enable placement (can skip circuit)
-                    enablePlacementTab(true);
+                    enablePlacementTab(false);
                     // Invalidate downstream
                     resetCircuitPanel();
                     // Auto-run circuit agent now that a fresh design exists

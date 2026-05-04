@@ -256,7 +256,7 @@ function renderView(el, data) {
                 _preview3d = create3DScene(host);
             }
             if (_previewBanner) {
-                _previewBanner.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">📦 SCAD generated — click <strong style="color:var(--text);">Compile STL</strong> to build the 3D model</span>';
+                _previewBanner.innerHTML = '<span style="font-size:12px;color:var(--text-muted);">📦 SCAD generated — compiling STL for 3D model...</span>';
             }
             _preview3d.update(previewData);
         } else {
@@ -264,7 +264,7 @@ function renderView(el, data) {
             el.innerHTML = `
                 <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;color:var(--text-muted);">
                     <span style="font-size:36px;">📦</span>
-                    <p style="margin:0">SCAD generated — click <strong>Compile STL</strong> to build the 3D model</p>
+                    <p style="margin:0">SCAD generated — compiling STL for 3D model...</p>
                 </div>`;
         }
         return;
