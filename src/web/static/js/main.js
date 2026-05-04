@@ -50,11 +50,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 syncManufacturingConfig(data);
                 // Enable circuit nav if design is complete
                 if (data?.artifacts?.design) {
-                    enableCircuitTab(!data?.artifacts?.circuit_conversation);
+                    enableCircuitTab(!data?.artifacts?.circuit);
                 }
                 // Enable placement nav if circuit is complete (or design if no circuit)
                 if (data?.artifacts?.design) {
-                    enablePlacementTab(!data?.artifacts?.placement);
+                    const circuitDone = !!data?.artifacts?.circuit;
+                    enablePlacementTab(circuitDone && !data?.artifacts?.placement);
                 }
                 // Enable routing nav if placement is complete
                 if (data?.artifacts?.placement) {
@@ -64,8 +65,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data?.artifacts?.routing) {
                     enableScadTab(!data?.artifacts?.scad);
                 }
-                // Enable manufacturing nav if SCAD is complete
-                if (data?.artifacts?.scad) {
+                // Enable manufacturing nav if STL compile is complete
+                if (data?.artifacts?.compile) {
                     enableManufacturingTab(!data?.artifacts?.gcode);
                 }
                 // Show firmware section if routing is complete
@@ -204,7 +205,14 @@ export function switchStep(step) {
         panel.hidden = panel.id !== `step-${step}`;
     });
     // Sync viewport
-    setStep(step);
+    if (step === 'manufacturing') {
+        document.getElementById('viewport').hidden = true;
+        document.getElementById('viewport-resize-handle').hidden = true;
+    } else {
+        document.getElementById('viewport').hidden = false;
+        document.getElementById('viewport-resize-handle').hidden = false;
+        setStep(step);
+    }
     // Reload conversation + result so the tab reflects any background agent activity
     if (step === 'design') loadConversation();
     if (step === 'circuit') loadCircuitConversation();

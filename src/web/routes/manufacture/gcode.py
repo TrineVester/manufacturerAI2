@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from src.pipeline.design import parse_physical_design
 from src.web.routes._deps import (
     get_gcode_state, set_gcode_state,
+    get_compile_state,
     load_session_or_404, require_routing,
 )
 
@@ -23,6 +24,10 @@ async def start_gcode(
     silverink_only: bool = Query(False),
 ):
     s = load_session_or_404(sid)
+    c_state = get_compile_state(sid)
+    if c_state and c_state.get("status") == "compiling":
+        raise HTTPException(400, "STL is still compiling — please wait for the 3D model to finish building before running manufacturing")
+
     two_part = s.has_artifact("enclosure_bottom.stl")
     stl_path = s.artifact_path("enclosure_bottom.stl" if two_part else "enclosure.stl")
     if not stl_path.exists():
