@@ -108,7 +108,7 @@ export async function runScad() {
         stopTabFlash();
         markStepDone('scad');
         markStepUndone('manufacturing');
-        enableManufacturingTab(true);
+        // We do NOT enable manufacturing tab here anymore; we wait for STL to compile.
         // Kick off STL compile in the background
         startStlCompile(data);
     } catch (e) {
@@ -145,7 +145,8 @@ export async function loadScadResult() {
         // Only flash manufacturing if it hasn't been completed yet
         const mfgBtn = document.querySelector('#pipeline-nav .step[data-step="manufacturing"]');
         const mfgDone = mfgBtn?.classList.contains('step-done') ?? false;
-        enableManufacturingTab(!mfgDone);
+        // Manufacturing tab will be enabled by pollOrRestoreStl if STL is done
+        
         // Also check STL status
         pollOrRestoreStl(data);
     } catch {
@@ -205,6 +206,9 @@ async function pollOrRestoreStl(scadData) {
                 scadLines: scadData?.scad_lines,
                 scadBytes: scadData?.scad_bytes,
             });
+            const mfgBtn = document.querySelector('#pipeline-nav .step[data-step="manufacturing"]');
+            const mfgDone = mfgBtn?.classList.contains('step-done') ?? false;
+            import('./manufacturing.js').then(m => m.enableManufacturingTab(!mfgDone));
         } else if (st.status === 'compiling') {
             setViewportData('scad', { stlStatus: 'compiling' });
             pollStlStatus(scadData);
@@ -257,6 +261,9 @@ function pollStlStatus(scadData) {
                     const note = el.querySelector('p');
                     if (note) note.textContent = 'enclosure.scad + enclosure.stl saved to session folder.';
                 }
+                const mfgBtn = document.querySelector('#pipeline-nav .step[data-step="manufacturing"]');
+                const mfgDone = mfgBtn?.classList.contains('step-done') ?? false;
+                import('./manufacturing.js').then(m => m.enableManufacturingTab(!mfgDone));
             } else if (st.status === 'error') {
                 stopPolling();
                 setViewportData('scad', { stlStatus: 'error', message: st.message || '' });

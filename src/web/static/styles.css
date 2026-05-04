@@ -225,6 +225,13 @@ main {
 
 .step-panel { animation: fadeIn 0.2s ease; flex: 1; min-height: 0; overflow: auto; }
 #step-design.step-panel { overflow: hidden; }
+#step-manufacturing.step-panel { flex: 1; }
+#viewport[hidden],
+#viewport-resize-handle[hidden] {
+    display: none !important;
+    width: 0 !important;
+    flex: 0 !important;
+}
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 
 .step-header {
@@ -1950,22 +1957,7 @@ tr.vp-hover {
     background: var(--accent-subtle, rgba(88,166,255,0.1));
 }
 
-.mfg-stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-    gap: 10px;
-    margin: 12px 0;
-}
 
-.mfg-stat-card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
 
 .mfg-stat-label {
     font-size: 11px;

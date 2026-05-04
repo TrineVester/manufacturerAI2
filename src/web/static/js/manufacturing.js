@@ -276,29 +276,6 @@ function renderResult(manifest, bitmapData) {
     toolbar.appendChild(rerunBtn);
     el.appendChild(toolbar);
 
-    // Stats grid
-    const grid = document.createElement('div');
-    grid.className = 'mfg-stats-grid';
-
-    if (manifest) {
-        grid.innerHTML += card('Printer', manifest.printer?.label || '—');
-        grid.innerHTML += card('Filament', manifest.filament?.label || '—');
-        if (manifest.gcode_bytes) {
-            grid.innerHTML += card('G-code', `${(manifest.gcode_bytes / 1024).toFixed(1)} kB`);
-        }
-        if (manifest.pause_points) {
-            grid.innerHTML += card('Pauses', `${manifest.pause_points.length}`);
-        }
-    }
-
-    if (bitmapData) {
-        grid.innerHTML += card('Bitmap', `${bitmapData.cols} × ${bitmapData.rows}`);
-        grid.innerHTML += card('Ink pixels', bitmapData.ink_pixels?.toLocaleString() || '0');
-        grid.innerHTML += card('Pixel pitch', `${bitmapData.pixel_size_mm} mm`);
-    }
-
-    el.appendChild(grid);
-
     // Pause points table
     if (manifest?.pause_points?.length) {
         const section = document.createElement('div');
