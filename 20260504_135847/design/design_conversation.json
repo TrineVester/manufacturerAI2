@@ -1,0 +1,262 @@
+[
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "<!-- design-context -->\nCurrent design document:\n```json\n{\n  \"device_description\": \"\",\n  \"name\": \"\",\n  \"shape\": null,\n  \"enclosure\": null,\n  \"ui_placements\": []\n}\n```"
+      },
+      {
+        "type": "text",
+        "text": "make a rectangular remote with one power button"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "signature": "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",
+        "thinking": "The user wants a rectangular remote with one power button. Let me start by checking the catalog for the tactile button component, then design a remote control shape.\n\nLet me think about this:\n1. It's a remote control - should be handheld, roughly 120-160mm long, 55-75mm wide\n2. One power button\n3. Rectangular shape - but I should make it more interesting than a plain rectangle\n\nLet me first check the tactile button component, then design something nice. Actually, I know the tactile_button_6x6 is the button to use. Let me also think about whether this needs a USB or power source.\n\nFor a remote control, I should think about what it's controlling. \n\nI'll keep it simple with just the one power button as requested, but I want to give it a proper remote feel rather than a boring rectangle. I'm thinking of a tapered design that's wider at the top where the button sits and narrower toward the grip, with rounded corners for that classic remote aesthetic. I'll aim for something around 130-140mm long and 60-65mm wide, positioning the power button near the top. Let me design this. I'll make it a classic remote shape - slightly tapered with rounded corners.\n\nShape: \n- Main body: a rectangle with rounded corners, maybe slightly tapered\n- Top area wider, bottom narrower for grip\n- Maybe a slight notch or contour at the grip area\n\nLet me start with the description and a rough shape, then add the button.\n\nFor the shape, I'll use:\n- A tapered rectangle: wider at top (~65mm), narrower at bottom (~55mm), length ~140mm\n- Corner radius for rounded look\n- Maybe difference operations for grip contours\n\nLet me start simple and iterate.\n\nCenter would be around [65, 70] for a 130mm tall, 65mm wide shape.\n\nActually, let me think about coordinates:\n- Width: ~65mm, so x from about 32 to 97, center at ~65\n- Height: ~140mm, so y from about 10 to 150, center at ~80\n\nNow I'm working out the tapered rectangle parameters - top should be 65mm wide, bottom 50mm, with 140mm length and 10mm corner radius. I need to clarify how the axis parameter works for the taper direction, since the size and size_end dimensions swap depending on which end is which. = 150\n\nNow I'm thinking through the remote's design details. I'll add grip contours using ellipse differences on the sides near the bottom, starting simple and building up. For the power button, I'm placing it near the top center around [65, 30] - a circular tactile button around 10-12mm diameter should work well. Let me sketch out the basic structure: a tapered rectangle with rounded corners that's wider at the top, roughly 12mm tall for the enclosure, with the power button positioned prominently at the top.\n\nI need to check the tactile button component specs to confirm the height requirements and finalize the dimensions.",
+        "type": "thinking"
+      },
+      {
+        "text": "I'll check the button component details while setting up the initial design description and shape.",
+        "type": "text"
+      },
+      {
+        "id": "toolu_01JXrEcBbsxY92fhz4JRLYpL",
+        "input": {
+          "component_id": "tactile_button_6x6"
+        },
+        "name": "get_component",
+        "type": "tool_use"
+      },
+      {
+        "id": "toolu_01REUZ85EyMHimX7eyatkS1G",
+        "input": {
+          "old_string": "\"device_description\": \"\",\n  \"name\": \"\",",
+          "new_string": "\"device_description\": \"A handheld remote control with a single power button. The user presses the tactile button at the top of the remote to toggle power on the target device. The remote is sized to sit comfortably in one hand.\",\n  \"name\": \"Power Remote\","
+        },
+        "name": "edit_design",
+        "type": "tool_use"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "tool_result",
+        "tool_use_id": "toolu_01JXrEcBbsxY92fhz4JRLYpL",
+        "content": "{\n  \"id\": \"tactile_button_6x6\",\n  \"name\": \"6x6mm Tactile Push Button\",\n  \"description\": \"Momentary push button switch, 6x6mm body. When pressed, pin A shorts to pin B. Four physical pins: pins 1&2 are internally connected (side A), pins 3&4 are internally connected (side B). Only two unique electrical connections needed.\",\n  \"ui_placement\": true,\n  \"mounting\": {\n    \"style\": \"top\",\n    \"allowed_styles\": [\n      \"top\"\n    ]\n  }\n}"
+      },
+      {
+        "type": "tool_result",
+        "tool_use_id": "toolu_01REUZ85EyMHimX7eyatkS1G",
+        "content": "Design saved. Shape is not set yet — no validation performed.\n\nCurrent design document:\n```json\n{\n  \"device_description\": \"A handheld remote control with a single power button. The user presses the tactile button at the top of the remote to toggle power on the target device. The remote is sized to sit comfortably in one hand.\",\n  \"name\": \"Power Remote\",\n  \"shape\": null,\n  \"enclosure\": null,\n  \"ui_placements\": []\n}\n```"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "signature": "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",
+        "thinking": "Good. Now let me set up the shape and enclosure. I'll make a classic remote shape - tapered rectangle wider at the top. Let me place the center around [65, 85] to have some margin, with the shape being about 65mm wide at top, 52mm wide at bottom, and 140mm tall.\n\nFor grip contours, I'll use difference with ellipses on the sides in the lower half.\n\nLet me also think about the enclosure height. The tactile button is a standard 6x6mm push button - it doesn't specify height from the data. The enclosure should be around 10-12mm tall to accommodate it comfortably.\n\n\nNow I'm starting with the main tapered body - 65mm wide at the top tapering to 50mm at the bottom, 140mm tall, centered at [65, 85] with 12mm corner radius. I'll add grip contours by subtracting ellipses from the sides of the lower portion to give it some ergonomic shaping.\n\nFor the grip area around y=120, I'll place ellipses just outside the left and right edges to create those contours, letting the validator handle the exact positioning rather than calculating it manually.\n\nWriting SVG shape...",
+        "type": "thinking"
+      },
+      {
+        "text": "Good. Now I'll build the shape — a tapered remote silhouette (wider at top, narrower at grip) with carved side contours for comfort.",
+        "type": "text"
+      },
+      {
+        "id": "toolu_01UUdELKYr4aFBY9zCVXPo9k",
+        "input": {
+          "old_string": "\"shape\": null,\n  \"enclosure\": null,",
+          "new_string": "\"shape\": {\n    \"op\": \"difference\",\n    \"children\": [\n      {\n        \"type\": \"rectangle\",\n        \"center\": [65, 85],\n        \"size\": [65, 140],\n        \"size_end\": [50, 140],\n        \"axis\": \"y\",\n        \"corner_radius\": 12\n      },\n      {\n        \"type\": \"ellipse\",\n        \"center\": [22, 110],\n        \"radius\": [16, 22]\n      },\n      {\n        \"type\": \"ellipse\",\n        \"center\": [108, 110],\n        \"radius\": [16, 22]\n      }\n    ]\n  },\n  \"enclosure\": {\n    \"height_mm\": 12,\n    \"edge_top\": {\"type\": \"fillet\", \"size_mm\": 3},\n    \"edge_bottom\": {\"type\": \"chamfer\", \"size_mm\": 2}\n  },"
+        },
+        "name": "edit_design",
+        "type": "tool_use"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "tool_result",
+        "tool_use_id": "toolu_01UUdELKYr4aFBY9zCVXPo9k",
+        "content": "Design saved and validated successfully.\n\nCurrent design document:\n```json\n{\n  \"device_description\": \"A handheld remote control with a single power button. The user presses the tactile button at the top of the remote to toggle power on the target device. The remote is sized to sit comfortably in one hand.\",\n  \"name\": \"Power Remote\",\n  \"shape\": {\n    \"op\": \"difference\",\n    \"children\": [\n      {\n        \"type\": \"rectangle\",\n        \"center\": [\n          65,\n          85\n        ],\n        \"size\": [\n          65,\n          140\n        ],\n        \"size_end\": [\n          50,\n          140\n        ],\n        \"axis\": \"y\",\n        \"corner_radius\": 12\n      },\n      {\n        \"type\": \"ellipse\",\n        \"center\": [\n          22,\n          110\n        ],\n        \"radius\": [\n          16,\n          22\n        ]\n      },\n      {\n        \"type\": \"ellipse\",\n        \"center\": [\n          108,\n          110\n        ],\n        \"radius\": [\n          16,\n          22\n        ]\n      }\n    ]\n  },\n  \"enclosure\": {\n    \"height_mm\": 12,\n    \"edge_top\": {\n      \"type\": \"fillet\",\n      \"size_mm\": 3\n    },\n    \"edge_bottom\": {\n      \"type\": \"chamfer\",\n      \"size_mm\": 2\n    }\n  },\n  \"ui_placements\": []\n}\n```"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "signature": "EpEFClsIDRgCKkC2+3zzK8vakoXTXI/jdjJbl5yCsAisc7V6/vWDouE21DiSxwB1q4KV7XdYnT2CHNENz00Syk/RtW5KqymOKwb6MhFjbGF1ZGUtc29ubmV0LTQtNjgAEgwtDFYv6/kuE8B9FA4aDHgtmmoZxa+OBvE2lCIw3sYtFiMElpMwVFbnkf16/KhMVLyb3E02mBDHzChaAVb3OvIIaEohPdZ64BWl9j1XKuMDCLgu38b5uFy98URm+qJy/RZoYWxNVEzL0OIGGdoOlmw9Lgi1Nv4+vVcE389jx4RmR4QO1hJxyIzTvt4zezEngKIHIziRy4JM4UN15KQK94sY/t+jjbZqAjoUYsHNSJQ3+SFydpQOKMEyznOfXecLrqvYotpCEP/EgdHJodYftBRmuATf6+Il8BwvsZfGkJMHI9CB72gzhLzyBtyPq2vm2KicJc8cDY8aPycoDgGZEtc4ilq6/T+rWCpSkF8hxg3Fc96AarcJThDjI2pobR1HpcWohH7UGxlx/P6Jzd6+yZ8A3C7lhVBTsxunyuqclSivFHsDz5YyplAR0IRoGlDYJZtgtyS3ncvy4RUaxQpApQIJlPOocvqmbtY+oM5i+203lcLjACnadkyY25gAx8LdmXMsbKn4pQGJnH62KQ1cnmR45tauqZIhVoCbc+fDTCdh2JBxC/5fxXcO23iqfT4bdgD0+cXd3e5epLC4engLkeU9mBQ91KqugSfJhDMo48jgIIfdtt/E1g8A73VxLS3DFWbsv7mQcRgVvU2kzTwhbGMLEwFr4j1Ji5a9ilfKbg9BtLcD58S62ag3eMbhzzdCiCNxt7XyBDuYvjM8+Vd0Baxzj40j/kPGBbKuID0n7KhiG/KQGAE=",
+        "thinking": "Great, the shape validated successfully. Now let me add the power button. It should be near the top of the remote, centered at approximately [65, 35]. I'll give it a nice circular button shape for a power button feel.\n\nThe remote center is at [65, 85], so the top is at about y=15 and the bottom at y=155. A good position for a power button would be around y=35-40 (upper area of the remote).\n\nLet me add the power button with a circular cap shape, maybe 12mm radius.",
+        "type": "thinking"
+      },
+      {
+        "text": "Shape looks great. Now I'll add the power button near the top center with a circular cap.",
+        "type": "text"
+      },
+      {
+        "id": "toolu_01WzVAmW9zZR8JdA1bx9RJy7",
+        "input": {
+          "old_string": "\"ui_placements\": []",
+          "new_string": "\"ui_placements\": [\n    {\n      \"instance_id\": \"btn_power\",\n      \"catalog_id\": \"tactile_button_6x6\",\n      \"x_mm\": 65,\n      \"y_mm\": 38,\n      \"button_shape\": {\"type\": \"ellipse\", \"center\": [0, 0], \"radius\": 10}\n    }\n  ]"
+        },
+        "name": "edit_design",
+        "type": "tool_use"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "tool_result",
+        "tool_use_id": "toolu_01WzVAmW9zZR8JdA1bx9RJy7",
+        "content": "Design saved and validated successfully.\n\nCurrent design document:\n```json\n{\n  \"device_description\": \"A handheld remote control with a single power button. The user presses the tactile button at the top of the remote to toggle power on the target device. The remote is sized to sit comfortably in one hand.\",\n  \"name\": \"Power Remote\",\n  \"shape\": {\n    \"op\": \"difference\",\n    \"children\": [\n      {\n        \"type\": \"rectangle\",\n        \"center\": [\n          65,\n          85\n        ],\n        \"size\": [\n          65,\n          140\n        ],\n        \"size_end\": [\n          50,\n          140\n        ],\n        \"axis\": \"y\",\n        \"corner_radius\": 12\n      },\n      {\n        \"type\": \"ellipse\",\n        \"center\": [\n          22,\n          110\n        ],\n        \"radius\": [\n          16,\n          22\n        ]\n      },\n      {\n        \"type\": \"ellipse\",\n        \"center\": [\n          108,\n          110\n        ],\n        \"radius\": [\n          16,\n          22\n        ]\n      }\n    ]\n  },\n  \"enclosure\": {\n    \"height_mm\": 12,\n    \"edge_top\": {\n      \"type\": \"fillet\",\n      \"size_mm\": 3\n    },\n    \"edge_bottom\": {\n      \"type\": \"chamfer\",\n      \"size_mm\": 2\n    }\n  },\n  \"ui_placements\": [\n    {\n      \"instance_id\": \"btn_power\",\n      \"catalog_id\": \"tactile_button_6x6\",\n      \"x_mm\": 65,\n      \"y_mm\": 38,\n      \"button_shape\": {\n        \"type\": \"ellipse\",\n        \"center\": [\n          0,\n          0\n        ],\n        \"radius\": 10\n      }\n    }\n  ]\n}\n```"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "signature": "EsQHClsIDRgCKkDybJ7kA1HVRp/lo/bVqdv1zdY7wXKGl+iHFjDZafRpJqSF/p+TWYSmC5KtaNZV3igy4o830XWjCyda7H/ttwo8MhFjbGF1ZGUtc29ubmV0LTQtNjgAEgxXm0n6G7XjWcWVO2kaDLpEIgvh/Wgjwu8czSIwBGxbxRI8Af14NXmd51xZhlAwJ0A8sjB9SsyGt2D+P/oAI/CW8XeC1pxG1FPXg8QrKpYG83HhViLz8uunpPlEYA2aPxyeOyS38HKGgexro5T4c5klgWWXFz9U+SX5Vf8X6rzTqbzJlmVJVJ4tiZxEVyv9fwjya46wzF2WHs43adOmzW5Mfwl5QwowUWGDXhFYPrNDNUhhiMmTXB3EH9XuZKxjJ1qoE/2Jszwgv6yFOcynTdjw+aVTvR8ecVcYkzDpgOUnkl84h3y251JcR6eGNhPpQMZzX30zcjAHHKq0scnktoRWKm2hnjlGPxfld8ZbjHKtZ73J9VvZFIgVcnBK19hZyDZ9eGFUv9wkEudIVDlraS0ZK1TRs7oA8VzRn7NTIvvd2C4jXUfUxyBy1endfRCysroVAwuI60beCeFvmtM7RIsT0mwlDeiWKXjSoRbW5EpPYGQJog7rOvjzKgpAV50E1hY76lCenFmmhdAYC4b3gMLhO28DZRnLHfJuKaSzOQRaQUO8xDGeLHQ/xLhpGnge6XsMuwRR2MRwWVJwTFPm6HY022PCRH7WPbJTVV0VgklmPJIZU2pWESTO8zcRPXoVJtFPRGZiCLcOHfJeQ41uFMoUjabJ9i8B5u5PTUWo9SmagjWvze8PqPf8o0h6XHtfE/ZmU1KQmEadmdFOBEuJbUcTI1Ts+bUp8RP7EmtmGFwCk/AmeDypJ7ZEYEWO4UfLiWnMWz4bK7PkEWBO1HiUu0jnCJoUIcGtzdFXIivLPNpivquBNFo2sgfYKnvRG7NIbcWPZQAADt2xudPxGp3GGpnapPZsoxkmDtQmbiipKfb67sgVXbQbXamalht3mdyQR7Dd1zlhnrYmyP5H+hbMKhhiCTr0cZ/bHeUzqX4E98xWZ/Z2/AHEQkZ5OvimAb2Hjf9lfTS9dATKVf/rJnleKSn5bYg/KUb6YYPtwaOVIuWkPIXehj1/Ym6xEI2eweeirkHZaJcn9+Luy9H7MxttCBkTYBJTXGyh5KW7aagRkgXty42yP/oA8QDxgezgYHVkgmPhb4tQd5kIQlNKuq4fWGd52ITlUS/Oh2HF34M4mypCpEb/TLwzIq/4s9ZPLIh6OBlHYZouGBgB",
+        "thinking": "The design validates successfully. Let me review it:\n\n1. **Shape**: Classic remote silhouette - tapered rectangle (65mm wide at top, 50mm wide at bottom, 140mm tall) with rounded corners. Side ellipses carved into the grip area for ergonomic contours.\n\n2. **Enclosure**: 12mm tall with fillet on top edges and chamfer on bottom edges. Nice tactile feel.\n\n3. **Power button**: Centered at the top of the remote (x=65, y=38) with a circular 10mm radius cap - exactly what a power button should look like.\n\nThe design looks good! The remote is:\n\n\n- Standard size at 140mm long and roughly 65mm wide\n- Tapered for comfortable grip\n- Features carved side contours for better ergonomics\n- Has a prominent circular power button positioned at the top\n\nI'm satisfied with how this turned out and ready to share it with the user.",
+        "type": "thinking"
+      },
+      {
+        "text": "The design is complete and validated. Here's what was built:\n\n---\n\n### Power Remote ✅\n\n**Silhouette** — A classic tapered remote body: 65mm wide at the top, narrowing to 50mm at the base (140mm long). Two elliptical concave cutouts are carved into the lower sides to form ergonomic grip contours where fingers naturally wrap around.\n\n**Enclosure** — 12mm tall, with a soft top fillet and chamfered base edge for a premium handheld feel.\n\n**Power button** — A single round tactile button (20mm diameter circular cap) centered near the top of the remote at the natural thumb-reach position.\n\nThe electronics engineer will add the microcontroller, battery holder, and supporting passives in the next stage — everything fits comfortably in the generous upper body of the remote above the grip.\n\nWant any changes — different proportions, a more expressive shape, or additional elements?",
+        "type": "text"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "text",
+        "text": "<!-- design-context -->\nCurrent design document:\n```json\n{\n  \"device_description\": \"A handheld remote control with a single power button. The user presses the tactile button at the top of the remote to toggle power on the target device. The remote is sized to sit comfortably in one hand.\",\n  \"name\": \"Power Remote\",\n  \"shape\": {\n    \"op\": \"difference\",\n    \"children\": [\n      {\n        \"type\": \"rectangle\",\n        \"center\": [\n          65,\n          85\n        ],\n        \"size\": [\n          65,\n          140\n        ],\n        \"size_end\": [\n          50,\n          140\n        ],\n        \"axis\": \"y\",\n        \"corner_radius\": 12\n      },\n      {\n        \"type\": \"ellipse\",\n        \"center\": [\n          22,\n          110\n        ],\n        \"radius\": [\n          16,\n          22\n        ]\n      },\n      {\n        \"type\": \"ellipse\",\n        \"center\": [\n          108,\n          110\n        ],\n        \"radius\": [\n          16,\n          22\n        ]\n      }\n    ]\n  },\n  \"enclosure\": {\n    \"height_mm\": 12,\n    \"edge_top\": {\n      \"type\": \"fillet\",\n      \"size_mm\": 3\n    },\n    \"edge_bottom\": {\n      \"type\": \"chamfer\",\n      \"size_mm\": 2\n    }\n  },\n  \"ui_placements\": [\n    {\n      \"instance_id\": \"btn_power\",\n      \"catalog_id\": \"tactile_button_6x6\",\n      \"x_mm\": 65,\n      \"y_mm\": 38,\n      \"button_shape\": {\n        \"type\": \"ellipse\",\n        \"center\": [\n          0,\n          0\n        ],\n        \"radius\": 10\n      }\n    }\n  ]\n}\n```"
+      },
+      {
+        "type": "text",
+        "text": "The circuit has been submitted and is electrically valid, but the enclosure needs adjustment before it can be finalised. The following constraints are not yet satisfied:\n\n  - Component 'led_ir' (led_5mm) has ui_placement=true but no UIPlacement defined\n  - Enclosure height_mm (12.0mm) is too short — needs at least 16.1mm (floor 1.6mm + tallest component 12.5mm + ceiling 2.0mm)\n\nPlease fix the enclosure (height, outline size, etc.) so that all components fit. Do not change the component list or circuit wiring."
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "signature": "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",
+        "thinking": "The electronics engineer has added an IR LED component (`led_ir`) that needs a UI placement, and the enclosure height needs to be increased to at least 16.1mm.\n\nLet me:\n1. Increase `height_mm` to at least 16.1mm - I'll use 17mm to be safe\n2. Add a UI placement for the `led_ir` (led_5mm) component\n\nFor the IR LED on a remote control, it should be mounted on the side (facing forward, toward the device being controlled). Let me check - the instructions say \"IR transmitter LEDs (led_5mm with wavelength 940nm) on remote controls must use mounting_style: 'side' so the LED faces the device being controlled.\"\n\n\nI'll place it as a side-mount at the top edge of the remote where it naturally points forward, using edge_index 0 and centering it along that edge.",
+        "type": "thinking"
+      },
+      {
+        "text": "Two fixes needed: raise the enclosure height and add a side-mount placement for the IR LED (which belongs at the top edge of the remote, pointing toward the target device).",
+        "type": "text"
+      },
+      {
+        "id": "toolu_016SHcVZbTcuvZ38SaX4dN4w",
+        "input": {
+          "old_string": "\"height_mm\": 12,",
+          "new_string": "\"height_mm\": 17,"
+        },
+        "name": "edit_design",
+        "type": "tool_use"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "tool_result",
+        "tool_use_id": "toolu_016SHcVZbTcuvZ38SaX4dN4w",
+        "content": "Design saved and validated successfully.\n\nCurrent design document:\n```json\n{\n  \"device_description\": \"A handheld remote control with a single power button. The user presses the tactile button at the top of the remote to toggle power on the target device. The remote is sized to sit comfortably in one hand.\",\n  \"name\": \"Power Remote\",\n  \"shape\": {\n    \"op\": \"difference\",\n    \"children\": [\n      {\n        \"type\": \"rectangle\",\n        \"center\": [\n          65,\n          85\n        ],\n        \"size\": [\n          65,\n          140\n        ],\n        \"size_end\": [\n          50,\n          140\n        ],\n        \"axis\": \"y\",\n        \"corner_radius\": 12\n      },\n      {\n        \"type\": \"ellipse\",\n        \"center\": [\n          22,\n          110\n        ],\n        \"radius\": [\n          16,\n          22\n        ]\n      },\n      {\n        \"type\": \"ellipse\",\n        \"center\": [\n          108,\n          110\n        ],\n        \"radius\": [\n          16,\n          22\n        ]\n      }\n    ]\n  },\n  \"enclosure\": {\n    \"height_mm\": 17,\n    \"edge_top\": {\n      \"type\": \"fillet\",\n      \"size_mm\": 3\n    },\n    \"edge_bottom\": {\n      \"type\": \"chamfer\",\n      \"size_mm\": 2\n    }\n  },\n  \"ui_placements\": [\n    {\n      \"instance_id\": \"btn_power\",\n      \"catalog_id\": \"tactile_button_6x6\",\n      \"x_mm\": 65,\n      \"y_mm\": 38,\n      \"button_shape\": {\n        \"type\": \"ellipse\",\n        \"center\": [\n          0,\n          0\n        ],\n        \"radius\": 10\n      }\n    }\n  ]\n}\n```"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "signature": "ErQDClsIDRgCKkCefPIOL7f6QNQGDTqYnUppshf9dYpHVTcc9nOTxe6UA9Q8V3SCnKezaGBa2a7CwI4I33TbNd/Tz66Ot7feXNSjMhFjbGF1ZGUtc29ubmV0LTQtNjgAEgz90OimcQoC9Fx5zz0aDMwUuBCy4126QTH27CIwrc/YqTUqA1MkzL1uVE5E3OaffQTgVVBUcsAy5at82L/0GrnvauVVOmEFsMn/BV7LKoYCXpktorDXB2yH9/5mKwM7EFxf5uA3UV+88tzHYgDx06MPz2DBgUIzhXqpNlrGrv7HFuRa8FclEg7OP6F99hSybAqIrcNLBQ85sWOlmJaTuq+pGJpam7tlIJvptHsdcOKsQXI2cVP92+mpobGspT7GD1ArL+7/UAg8D1Vyftmh1jVroBycxmhO18PTfWFN1xAfBYEvPN7XRRnswjv2/WibKgsmAEstzbBxXvXaVCmloquZtucC1ZluHMRE2/Yj8zcWidnvlgqOjVml/FiRFq2wger58y+GIHlWtWt/gf73vLoUOe5q68kn0yIojQ4JzGLTpXEUjhixeFpPjOernju6IuMEXRwlRhgB",
+        "thinking": "Good, height is fixed. Now I need to add the IR LED placement. It should be side-mounted at the top of the remote. For edge_index, I'll try 0 first which is typically the top edge for a shape like this. The position should be near the top center.",
+        "type": "thinking"
+      },
+      {
+        "text": "Now add the IR LED as a side-mount at the top edge of the remote.",
+        "type": "text"
+      },
+      {
+        "id": "toolu_01WAnqRoSPjpGd7Qvvkq6yPg",
+        "input": {
+          "old_string": "    {\n      \"instance_id\": \"btn_power\",",
+          "new_string": "    {\n      \"instance_id\": \"led_ir\",\n      \"catalog_id\": \"led_5mm\",\n      \"x_mm\": 65,\n      \"y_mm\": 15,\n      \"edge_index\": 0,\n      \"mounting_style\": \"side\"\n    },\n    {\n      \"instance_id\": \"btn_power\","
+        },
+        "name": "edit_design",
+        "type": "tool_use"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "tool_result",
+        "tool_use_id": "toolu_01WAnqRoSPjpGd7Qvvkq6yPg",
+        "content": "Design saved. Validation errors:\n  - UI placement 'led_ir': coordinates (65.0, 15.0) are 22.1 mm from edge_index 0 (tolerance 5.0 mm). Did you mean edge_index 79?\n\nCurrent design document:\n```json\n{\n  \"device_description\": \"A handheld remote control with a single power button. The user presses the tactile button at the top of the remote to toggle power on the target device. The remote is sized to sit comfortably in one hand.\",\n  \"name\": \"Power Remote\",\n  \"shape\": {\n    \"op\": \"difference\",\n    \"children\": [\n      {\n        \"type\": \"rectangle\",\n        \"center\": [\n          65,\n          85\n        ],\n        \"size\": [\n          65,\n          140\n        ],\n        \"size_end\": [\n          50,\n          140\n        ],\n        \"axis\": \"y\",\n        \"corner_radius\": 12\n      },\n      {\n        \"type\": \"ellipse\",\n        \"center\": [\n          22,\n          110\n        ],\n        \"radius\": [\n          16,\n          22\n        ]\n      },\n      {\n        \"type\": \"ellipse\",\n        \"center\": [\n          108,\n          110\n        ],\n        \"radius\": [\n          16,\n          22\n        ]\n      }\n    ]\n  },\n  \"enclosure\": {\n    \"height_mm\": 17,\n    \"edge_top\": {\n      \"type\": \"fillet\",\n      \"size_mm\": 3\n    },\n    \"edge_bottom\": {\n      \"type\": \"chamfer\",\n      \"size_mm\": 2\n    }\n  },\n  \"ui_placements\": [\n    {\n      \"instance_id\": \"led_ir\",\n      \"catalog_id\": \"led_5mm\",\n      \"x_mm\": 65,\n      \"y_mm\": 15,\n      \"edge_index\": 0,\n      \"mounting_style\": \"side\"\n    },\n    {\n      \"instance_id\": \"btn_power\",\n      \"catalog_id\": \"tactile_button_6x6\",\n      \"x_mm\": 65,\n      \"y_mm\": 38,\n      \"button_shape\": {\n        \"type\": \"ellipse\",\n        \"center\": [\n          0,\n          0\n        ],\n        \"radius\": 10\n      }\n    }\n  ]\n}\n```"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "signature": "EpICClsIDRgCKkDIDACMrQ3NoAd5FMpZt9GR3tzL9g+FEnhpDS1M+V4hA3Nv46qYY6/j6i4bk0/tMOLNO0kqx2GFBdUye+C4L9COMhFjbGF1ZGUtc29ubmV0LTQtNjgAEgxt37RZO2gsz+asZiYaDM4bYdbHHFFZlzqCfCIwI91jcVEGAeNFzNetjjk9JufJCwyGaqD+jVEeaPMQcjPTuL5hlJXlMeDiDvpj59AxKmUc8US1zCPpaQRdacBE1nc9NGTeBoaV8UCNUqX1G+4FqMDZqZTqb+mK+Ss3kah/ybwOIRjLnAK3ebGoO3RTVu8M+cx9JmSCPur1SNuCrYTGwdD8LskeJ5U4SKCaMRXpkc1Z7/AbUhgB",
+        "thinking": "The validator says edge_index 0 is wrong and suggests edge_index 79. Let me use that.",
+        "type": "thinking"
+      },
+      {
+        "text": "The validator suggests edge_index 79 for the top edge — switching to that now.",
+        "type": "text"
+      },
+      {
+        "id": "toolu_01Q1GJ4bkVRZAt8oyieN2eNo",
+        "input": {
+          "old_string": "\"edge_index\": 0,",
+          "new_string": "\"edge_index\": 79,"
+        },
+        "name": "edit_design",
+        "type": "tool_use"
+      }
+    ]
+  },
+  {
+    "role": "user",
+    "content": [
+      {
+        "type": "tool_result",
+        "tool_use_id": "toolu_01Q1GJ4bkVRZAt8oyieN2eNo",
+        "content": "Design saved and validated successfully.\n\nCurrent design document:\n```json\n{\n  \"device_description\": \"A handheld remote control with a single power button. The user presses the tactile button at the top of the remote to toggle power on the target device. The remote is sized to sit comfortably in one hand.\",\n  \"name\": \"Power Remote\",\n  \"shape\": {\n    \"op\": \"difference\",\n    \"children\": [\n      {\n        \"type\": \"rectangle\",\n        \"center\": [\n          65,\n          85\n        ],\n        \"size\": [\n          65,\n          140\n        ],\n        \"size_end\": [\n          50,\n          140\n        ],\n        \"axis\": \"y\",\n        \"corner_radius\": 12\n      },\n      {\n        \"type\": \"ellipse\",\n        \"center\": [\n          22,\n          110\n        ],\n        \"radius\": [\n          16,\n          22\n        ]\n      },\n      {\n        \"type\": \"ellipse\",\n        \"center\": [\n          108,\n          110\n        ],\n        \"radius\": [\n          16,\n          22\n        ]\n      }\n    ]\n  },\n  \"enclosure\": {\n    \"height_mm\": 17,\n    \"edge_top\": {\n      \"type\": \"fillet\",\n      \"size_mm\": 3\n    },\n    \"edge_bottom\": {\n      \"type\": \"chamfer\",\n      \"size_mm\": 2\n    }\n  },\n  \"ui_placements\": [\n    {\n      \"instance_id\": \"led_ir\",\n      \"catalog_id\": \"led_5mm\",\n      \"x_mm\": 65,\n      \"y_mm\": 15,\n      \"edge_index\": 79,\n      \"mounting_style\": \"side\"\n    },\n    {\n      \"instance_id\": \"btn_power\",\n      \"catalog_id\": \"tactile_button_6x6\",\n      \"x_mm\": 65,\n      \"y_mm\": 38,\n      \"button_shape\": {\n        \"type\": \"ellipse\",\n        \"center\": [\n          0,\n          0\n        ],\n        \"radius\": 10\n      }\n    }\n  ]\n}\n```"
+      }
+    ]
+  },
+  {
+    "role": "assistant",
+    "content": [
+      {
+        "text": "All good — both issues resolved:\n\n- **Enclosure height** raised from 12mm → **17mm** (floor 1.6mm + tallest component 12.5mm + ceiling 2mm = 16.1mm minimum, now satisfied).\n- **IR LED** (`led_ir`) placed as a **side-mount at the top edge** (edge 79), so it faces outward toward the target device — exactly where a remote's IR emitter belongs.",
+        "type": "text"
+      }
+    ]
+  }
+]

@@ -1,0 +1,20 @@
+{
+  "id": "20260504_135847",
+  "created": "2026-05-04T11:58:47.260386+00:00",
+  "last_modified": "2026-05-04T12:05:31.987864+00:00",
+  "description": "",
+  "name": "Power Remote",
+  "printer_id": "coreone",
+  "filament_id": "pla",
+  "model_id": "medium",
+  "pipeline_state": {
+    "design": "complete",
+    "circuit": "complete",
+    "placement": "complete",
+    "routing": "complete",
+    "scad": "complete",
+    "gcode": "complete",
+    "firmware": "complete"
+  },
+  "pipeline_errors": {}
+}

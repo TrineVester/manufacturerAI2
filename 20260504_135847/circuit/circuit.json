@@ -1,0 +1,837 @@
+{
+  "components": [
+    {
+      "catalog_id": "battery_holder_2xAAA",
+      "instance_id": "bat_1",
+      "body": {
+        "shape": "rect",
+        "width_mm": 23.0,
+        "length_mm": 48.0,
+        "diameter_mm": null,
+        "height_mm": 12.5
+      },
+      "pins": [
+        {
+          "id": "V+",
+          "label": "Positive tab (3V)",
+          "position_mm": [
+            6.75,
+            26.0
+          ],
+          "direction": "out",
+          "hole_diameter_mm": 3.0,
+          "description": "Positive tab from small plate, reaching ink traces through floor.",
+          "voltage_v": 3.0,
+          "current_max_ma": 1000,
+          "shape": {
+            "type": "rect",
+            "width_mm": 4.0,
+            "length_mm": 1.0
+          }
+        },
+        {
+          "id": "GND",
+          "label": "Ground tab (-)",
+          "position_mm": [
+            -6.75,
+            26.0
+          ],
+          "direction": "out",
+          "hole_diameter_mm": 3.0,
+          "description": "Negative tab from small plate, reaching ink traces through floor.",
+          "voltage_v": 0,
+          "current_max_ma": 1000,
+          "shape": {
+            "type": "rect",
+            "width_mm": 4.0,
+            "length_mm": 1.0
+          }
+        }
+      ],
+      "ui_placement": false
+    },
+    {
+      "catalog_id": "atmega328p_dip28",
+      "instance_id": "mcu_1",
+      "body": {
+        "shape": "rect",
+        "width_mm": 12,
+        "length_mm": 35.2,
+        "diameter_mm": null,
+        "height_mm": 3.3
+      },
+      "pins": [
+        {
+          "id": "PC6",
+          "label": "PC6/RESET",
+          "position_mm": [
+            -4.6,
+            -16.51
+          ],
+          "direction": "in",
+          "hole_diameter_mm": 0.6,
+          "description": "Reset pin (active low). Directly connect to VCC through 10kÎ© pull-up for normal operation.",
+          "voltage_v": 5.0,
+          "current_max_ma": 1,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PD0",
+          "label": "PD0/RXD",
+          "position_mm": [
+            -4.6,
+            -13.97
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Digital pin 0. Also UART receive (RXD). Avoid if UART not needed.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PD1",
+          "label": "PD1/TXD",
+          "position_mm": [
+            -4.6,
+            -11.43
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Digital pin 1. Also UART transmit (TXD). Avoid if UART not needed.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PD2",
+          "label": "PD2/INT0",
+          "position_mm": [
+            -4.6,
+            -8.89
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Digital pin 2. External interrupt 0. Good for buttons needing instant response.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PD3",
+          "label": "PD3/INT1/OC2B",
+          "position_mm": [
+            -4.6,
+            -6.35
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Digital pin 3. PWM output (Timer2B). External interrupt 1. Use for PWM-driven loads (IR LED modulation, LED brightness).",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PD4",
+          "label": "PD4/T0",
+          "position_mm": [
+            -4.6,
+            -3.81
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Digital pin 4. Timer0 external clock input. General purpose I/O.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "VCC1",
+          "label": "VCC",
+          "position_mm": [
+            -4.6,
+            -1.27
+          ],
+          "direction": "in",
+          "hole_diameter_mm": 0.6,
+          "description": "Power supply pin. Connect to +3-5V.",
+          "voltage_v": 5.0,
+          "current_max_ma": 200,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "GND1",
+          "label": "GND",
+          "position_mm": [
+            -4.6,
+            1.27
+          ],
+          "direction": "in",
+          "hole_diameter_mm": 0.6,
+          "description": "Ground pin. Connect to ground plane.",
+          "voltage_v": 0,
+          "current_max_ma": 200,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PB6",
+          "label": "PB6/XTAL1",
+          "position_mm": [
+            -4.6,
+            3.81
+          ],
+          "direction": "in",
+          "hole_diameter_mm": 0.6,
+          "description": "Crystal oscillator pin 1. Connect to crystal XTAL1 pin with 20pF cap to GND. Leave unconnected if using internal 8MHz RC oscillator.",
+          "voltage_v": 5.0,
+          "current_max_ma": 1,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PB7",
+          "label": "PB7/XTAL2",
+          "position_mm": [
+            -4.6,
+            6.35
+          ],
+          "direction": "out",
+          "hole_diameter_mm": 0.6,
+          "description": "Crystal oscillator pin 2. Connect to crystal XTAL2 pin with 20pF cap to GND. Leave unconnected if using internal 8MHz RC oscillator.",
+          "voltage_v": 5.0,
+          "current_max_ma": 1,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PD5",
+          "label": "PD5/OC0B/T1",
+          "position_mm": [
+            -4.6,
+            8.89
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Digital pin 5. PWM output (Timer0B). General purpose I/O.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PD6",
+          "label": "PD6/OC0A",
+          "position_mm": [
+            -4.6,
+            11.43
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Digital pin 6. PWM output (Timer0A). General purpose I/O.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PD7",
+          "label": "PD7",
+          "position_mm": [
+            -4.6,
+            13.97
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Digital pin 7. General purpose I/O only, no special functions.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PB0",
+          "label": "PB0/ICP1",
+          "position_mm": [
+            -4.6,
+            16.51
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Digital pin 8. Input capture for Timer1. General purpose I/O.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PB1",
+          "label": "PB1/OC1A",
+          "position_mm": [
+            4.6,
+            16.51
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Digital pin 9. PWM output (Timer1A). 16-bit timer â€” good for servo or precise timing.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PB2",
+          "label": "PB2/OC1B/SS",
+          "position_mm": [
+            4.6,
+            13.97
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Digital pin 10. PWM output (Timer1B). SPI slave select. General purpose I/O.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PB3",
+          "label": "PB3/MOSI/OC2A",
+          "position_mm": [
+            4.6,
+            11.43
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Digital pin 11. PWM (Timer2A). SPI MOSI. Used for ISP programming.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PB4",
+          "label": "PB4/MISO",
+          "position_mm": [
+            4.6,
+            8.89
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Digital pin 12. SPI MISO. General purpose I/O.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PB5",
+          "label": "PB5/SCK",
+          "position_mm": [
+            4.6,
+            6.35
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Digital pin 13. SPI clock. Built-in LED on Arduino boards.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "AVCC",
+          "label": "AVCC",
+          "position_mm": [
+            4.6,
+            3.81
+          ],
+          "direction": "in",
+          "hole_diameter_mm": 0.6,
+          "description": "Analog power supply. Connect to VCC (tie together with VCC pin).",
+          "voltage_v": 5.0,
+          "current_max_ma": 200,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "AREF",
+          "label": "AREF",
+          "position_mm": [
+            4.6,
+            1.27
+          ],
+          "direction": "in",
+          "hole_diameter_mm": 0.6,
+          "description": "Analog reference voltage. Leave unconnected for default internal reference.",
+          "voltage_v": 5.0,
+          "current_max_ma": 1,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "GND2",
+          "label": "GND",
+          "position_mm": [
+            4.6,
+            -1.27
+          ],
+          "direction": "in",
+          "hole_diameter_mm": 0.6,
+          "description": "Ground pin. Connect to ground plane.",
+          "voltage_v": 0,
+          "current_max_ma": 200,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PC0",
+          "label": "PC0/ADC0",
+          "position_mm": [
+            4.6,
+            -3.81
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Analog pin A0. 10-bit ADC input. Also usable as digital I/O.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PC1",
+          "label": "PC1/ADC1",
+          "position_mm": [
+            4.6,
+            -6.35
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Analog pin A1. 10-bit ADC input. Also usable as digital I/O.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PC2",
+          "label": "PC2/ADC2",
+          "position_mm": [
+            4.6,
+            -8.89
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Analog pin A2. 10-bit ADC input. Also usable as digital I/O.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PC3",
+          "label": "PC3/ADC3",
+          "position_mm": [
+            4.6,
+            -11.43
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Analog pin A3. 10-bit ADC input. Also usable as digital I/O.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PC4",
+          "label": "PC4/ADC4/SDA",
+          "position_mm": [
+            4.6,
+            -13.97
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Analog pin A4. I2C data line (SDA). Use for I2C peripherals (screens, sensors).",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        },
+        {
+          "id": "PC5",
+          "label": "PC5/ADC5/SCL",
+          "position_mm": [
+            4.6,
+            -16.51
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Analog pin A5. I2C clock line (SCL). Use for I2C peripherals.",
+          "voltage_v": 5.0,
+          "current_max_ma": 20,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.3,
+            "length_mm": 0.6
+          }
+        }
+      ],
+      "ui_placement": false
+    },
+    {
+      "catalog_id": "tactile_button_6x6",
+      "instance_id": "btn_power",
+      "body": {
+        "shape": "rect",
+        "width_mm": 10,
+        "length_mm": 8,
+        "diameter_mm": null,
+        "height_mm": 3.3
+      },
+      "pins": [
+        {
+          "id": "1",
+          "label": "A1",
+          "position_mm": [
+            -3.5,
+            -2.205
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.75,
+          "description": "Side A, pin 1. Internally shorted to pin 2.",
+          "voltage_v": null,
+          "current_max_ma": 50,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.75,
+            "length_mm": 0.3
+          }
+        },
+        {
+          "id": "2",
+          "label": "A2",
+          "position_mm": [
+            3.5,
+            -2.205
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.75,
+          "description": "Side A, pin 2. Internally shorted to pin 1.",
+          "voltage_v": null,
+          "current_max_ma": 50,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.75,
+            "length_mm": 0.3
+          }
+        },
+        {
+          "id": "3",
+          "label": "B1",
+          "position_mm": [
+            -3.5,
+            2.205
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.75,
+          "description": "Side B, pin 1. Internally shorted to pin 4.",
+          "voltage_v": null,
+          "current_max_ma": 50,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.75,
+            "length_mm": 0.3
+          }
+        },
+        {
+          "id": "4",
+          "label": "B2",
+          "position_mm": [
+            3.5,
+            2.205
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.75,
+          "description": "Side B, pin 2. Internally shorted to pin 3.",
+          "voltage_v": null,
+          "current_max_ma": 50,
+          "shape": {
+            "type": "rect",
+            "width_mm": 0.75,
+            "length_mm": 0.3
+          }
+        }
+      ],
+      "ui_placement": true,
+      "cap_diameter_mm": 9.0,
+      "cap_clearance_mm": 0.4
+    },
+    {
+      "catalog_id": "led_5mm",
+      "instance_id": "led_ir",
+      "config": {
+        "color": "ir"
+      },
+      "mounting_style": "side",
+      "body": {
+        "shape": "circle",
+        "width_mm": null,
+        "length_mm": null,
+        "diameter_mm": 5.4,
+        "height_mm": 8.5
+      },
+      "pins": [
+        {
+          "id": "anode",
+          "label": "Anode (+)",
+          "position_mm": [
+            1.0,
+            0
+          ],
+          "direction": "in",
+          "hole_diameter_mm": 0.6,
+          "description": "Positive terminal. Connect through current-limiting resistor to V+.",
+          "voltage_v": null,
+          "current_max_ma": 20
+        },
+        {
+          "id": "cathode",
+          "label": "Cathode (-)",
+          "position_mm": [
+            -1.0,
+            0
+          ],
+          "direction": "in",
+          "hole_diameter_mm": 0.6,
+          "description": "Negative terminal. Connect to ground.",
+          "voltage_v": 0,
+          "current_max_ma": 20
+        }
+      ],
+      "ui_placement": true
+    },
+    {
+      "catalog_id": "resistor_axial",
+      "instance_id": "r_ir",
+      "config": {
+        "resistance_ohms": 100
+      },
+      "body": {
+        "shape": "rect",
+        "width_mm": 11,
+        "length_mm": 2.4,
+        "diameter_mm": null,
+        "height_mm": 2.4
+      },
+      "pins": [
+        {
+          "id": "1",
+          "label": "Lead 1",
+          "position_mm": [
+            -4.25,
+            0
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Non-polarized. Either lead can be input or output.",
+          "voltage_v": null,
+          "current_max_ma": 250
+        },
+        {
+          "id": "2",
+          "label": "Lead 2",
+          "position_mm": [
+            4.25,
+            0
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Non-polarized. Either lead can be input or output.",
+          "voltage_v": null,
+          "current_max_ma": 250
+        }
+      ],
+      "ui_placement": false
+    },
+    {
+      "catalog_id": "resistor_axial",
+      "instance_id": "r_reset",
+      "config": {
+        "resistance_ohms": 10000
+      },
+      "body": {
+        "shape": "rect",
+        "width_mm": 11,
+        "length_mm": 2.4,
+        "diameter_mm": null,
+        "height_mm": 2.4
+      },
+      "pins": [
+        {
+          "id": "1",
+          "label": "Lead 1",
+          "position_mm": [
+            -4.25,
+            0
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Non-polarized. Either lead can be input or output.",
+          "voltage_v": null,
+          "current_max_ma": 250
+        },
+        {
+          "id": "2",
+          "label": "Lead 2",
+          "position_mm": [
+            4.25,
+            0
+          ],
+          "direction": "bidirectional",
+          "hole_diameter_mm": 0.6,
+          "description": "Non-polarized. Either lead can be input or output.",
+          "voltage_v": null,
+          "current_max_ma": 250
+        }
+      ],
+      "ui_placement": false
+    }
+  ],
+  "nets": [
+    {
+      "id": "VCC",
+      "pins": [
+        "bat_1:V+",
+        "mcu_1:power",
+        "r_reset:1"
+      ]
+    },
+    {
+      "id": "GND",
+      "pins": [
+        "bat_1:GND",
+        "mcu_1:ground",
+        "btn_power:B",
+        "led_ir:cathode"
+      ]
+    },
+    {
+      "id": "RESET",
+      "pins": [
+        "mcu_1:PC6",
+        "r_reset:2"
+      ]
+    },
+    {
+      "id": "BTN_PWR",
+      "pins": [
+        "btn_power:A",
+        "mcu_1:gpio"
+      ]
+    },
+    {
+      "id": "IR_CTRL",
+      "pins": [
+        "mcu_1:pwm",
+        "r_ir:1"
+      ]
+    },
+    {
+      "id": "IR_DRIVE",
+      "pins": [
+        "r_ir:2",
+        "led_ir:anode"
+      ]
+    }
+  ]
+}

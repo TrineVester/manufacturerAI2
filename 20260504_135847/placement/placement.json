@@ -1,0 +1,224 @@
+{
+  "components": [
+    {
+      "instance_id": "led_ir",
+      "catalog_id": "led_5mm",
+      "x_mm": 65.0,
+      "y_mm": 19.25,
+      "rotation_deg": 180.0,
+      "pin_positions": {
+        "anode": [
+          64.0,
+          23.5
+        ],
+        "cathode": [
+          66.0,
+          23.5
+        ]
+      },
+      "mounting_style": "side"
+    },
+    {
+      "instance_id": "btn_power",
+      "catalog_id": "tactile_button_6x6",
+      "x_mm": 65.0,
+      "y_mm": 38.0,
+      "rotation_deg": 0,
+      "pin_positions": {
+        "1": [
+          61.5,
+          35.795
+        ],
+        "2": [
+          68.5,
+          35.795
+        ],
+        "3": [
+          61.5,
+          40.205
+        ],
+        "4": [
+          68.5,
+          40.205
+        ]
+      },
+      "mounting_style": "top"
+    },
+    {
+      "instance_id": "bat_1",
+      "catalog_id": "battery_holder_2xAAA",
+      "x_mm": 53.5,
+      "y_mm": 76.4,
+      "rotation_deg": 180,
+      "pin_positions": {
+        "V+": [
+          46.75,
+          50.4
+        ],
+        "GND": [
+          60.25,
+          50.4
+        ]
+      },
+      "mounting_style": "bottom"
+    },
+    {
+      "instance_id": "mcu_1",
+      "catalog_id": "atmega328p_dip28",
+      "x_mm": 81.07,
+      "y_mm": 42.92,
+      "rotation_deg": 180,
+      "pin_positions": {
+        "PC6": [
+          85.67,
+          59.43
+        ],
+        "PD0": [
+          85.67,
+          56.89
+        ],
+        "PD1": [
+          85.67,
+          54.35
+        ],
+        "PD2": [
+          85.67,
+          51.81
+        ],
+        "PD3": [
+          85.67,
+          49.27
+        ],
+        "PD4": [
+          85.67,
+          46.73
+        ],
+        "VCC1": [
+          85.67,
+          44.19
+        ],
+        "GND1": [
+          85.67,
+          41.65
+        ],
+        "PB6": [
+          85.67,
+          39.11
+        ],
+        "PB7": [
+          85.67,
+          36.57
+        ],
+        "PD5": [
+          85.67,
+          34.03
+        ],
+        "PD6": [
+          85.67,
+          31.49
+        ],
+        "PD7": [
+          85.67,
+          28.95
+        ],
+        "PB0": [
+          85.67,
+          26.41
+        ],
+        "PB1": [
+          76.47,
+          26.41
+        ],
+        "PB2": [
+          76.47,
+          28.95
+        ],
+        "PB3": [
+          76.47,
+          31.49
+        ],
+        "PB4": [
+          76.47,
+          34.03
+        ],
+        "PB5": [
+          76.47,
+          36.57
+        ],
+        "AVCC": [
+          76.47,
+          39.11
+        ],
+        "AREF": [
+          76.47,
+          41.65
+        ],
+        "GND2": [
+          76.47,
+          44.19
+        ],
+        "PC0": [
+          76.47,
+          46.73
+        ],
+        "PC1": [
+          76.47,
+          49.27
+        ],
+        "PC2": [
+          76.47,
+          51.81
+        ],
+        "PC3": [
+          76.47,
+          54.35
+        ],
+        "PC4": [
+          76.47,
+          56.89
+        ],
+        "PC5": [
+          76.47,
+          59.43
+        ]
+      },
+      "mounting_style": "internal"
+    },
+    {
+      "instance_id": "r_reset",
+      "catalog_id": "resistor_axial",
+      "x_mm": 86.32,
+      "y_mm": 66.82,
+      "rotation_deg": 0,
+      "pin_positions": {
+        "1": [
+          82.07,
+          66.82
+        ],
+        "2": [
+          90.57,
+          66.82
+        ]
+      },
+      "mounting_style": "internal"
+    },
+    {
+      "instance_id": "r_ir",
+      "catalog_id": "resistor_axial",
+      "x_mm": 76.97,
+      "y_mm": 19.04,
+      "rotation_deg": 180,
+      "pin_positions": {
+        "1": [
+          81.22,
+          19.04
+        ],
+        "2": [
+          72.72,
+          19.04
+        ]
+      },
+      "mounting_style": "internal"
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "device_description": "A handheld remote control with a single power button. The user presses the tactile button at the top of the remote to toggle power on the target device. The remote is sized to sit comfortably in one hand.",
+  "name": "Power Remote",
+  "shape": {
+    "op": "difference",
+    "children": [
+      {
+        "type": "rectangle",
+        "center": [
+          65,
+          85
+        ],
+        "size": [
+          65,
+          140
+        ],
+        "size_end": [
+          50,
+          140
+        ],
+        "axis": "y",
+        "corner_radius": 12
+      },
+      {
+        "type": "ellipse",
+        "center": [
+          22,
+          110
+        ],
+        "radius": [
+          16,
+          22
+        ]
+      },
+      {
+        "type": "ellipse",
+        "center": [
+          108,
+          110
+        ],
+        "radius": [
+          16,
+          22
+        ]
+      }
+    ]
+  },
+  "enclosure": {
+    "height_mm": 17,
+    "edge_top": {
+      "type": "fillet",
+      "size_mm": 3
+    },
+    "edge_bottom": {
+      "type": "chamfer",
+      "size_mm": 2
+    }
+  },
+  "ui_placements": [
+    {
+      "instance_id": "led_ir",
+      "catalog_id": "led_5mm",
+      "x_mm": 65,
+      "y_mm": 15,
+      "edge_index": 79,
+      "mounting_style": "side"
+    },
+    {
+      "instance_id": "btn_power",
+      "catalog_id": "tactile_button_6x6",
+      "x_mm": 65,
+      "y_mm": 38,
+      "button_shape": {
+        "type": "ellipse",
+        "center": [
+          0,
+          0
+        ],
+        "radius": 10
+      }
+    }
+  ]
+}
